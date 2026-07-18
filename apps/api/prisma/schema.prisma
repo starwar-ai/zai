@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum DataScope {
+  ALL
+  DEPARTMENT
+  PERSONAL
+}
+
+model Document {
+  id               String         @id @default(uuid()) @db.Uuid
+  typeId           String         @map("type_id") @db.VarChar(64)
+  code             String         @unique @db.VarChar(64)
+  status           DocumentStatus @default(DRAFT)
+  masterData       Json           @map("master_data") @db.JsonB
+  detailTables     Json           @map("detail_tables") @db.JsonB
+  searchText       String         @default("") @map("search_text")
+  sourceDocumentId String?        @map("source_document_id") @db.Uuid
+  sourceTypeId     String?        @map("source_type_id") @db.VarChar(64)
+  sourceCode       String?        @map("source_code") @db.VarChar(64)
+  createdBy        String         @map("created_by") @db.VarChar(100)
+  createdById      String         @map("created_by_id") @db.VarChar(64)
+  departmentId     String?        @map("department_id") @db.VarChar(64)
+  version          Int            @default(1)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  source     Document?        @relation("DocumentTrace", fields: [sourceDocumentId], references: [id], onDelete: Restrict)
+  downstream Document[]       @relation("DocumentTrace")
+  activities ActivityRecord[]
+
+  @@unique([sourceDocumentId, typeId])
+  @@index([typeId, status])
+  @@index([updatedAt])
+  @@index([typeId, updatedAt])
+  @@map("documents")
+}
+
+model DataPermissionPolicy {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.VarChar(64)
+  typeId             String    @map("type_id") @db.VarChar(64)
+  scope              DataScope @default(PERSONAL)
+  extraDepartmentIds String[]  @default([]) @map("extra_department_ids")
+  extraUserIds       String[]  @default([]) @map("extra_user_ids")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([userId, typeId])
+  @@index([userId])
+  @@map("data_permission_policies")
+}
+
+model UserPreference {
+  userId    String   @id @map("user_id") @db.VarChar(64)
+  settings  Json     @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("user_preferences")
+}
+
+model UserNotification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.VarChar(64)
+  title      String    @db.VarChar(120)
+  content    String    @db.VarChar(500)
+  level      String    @default("info") @db.VarChar(20)
+  target     Json?     @db.JsonB
+  readAt     DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, readAt, createdAt])
+  @@map("user_notifications")
+}
+
+model SystemMenu {
+  id             String   @id @db.VarChar(80)
+  groupId        String   @map("group_id") @db.VarChar(64)
+  groupLabel     String   @map("group_label") @db.VarChar(80)
+  label          String   @db.VarChar(80)
+  icon           String   @default("FileText") @db.VarChar(60)
+  target         String   @db.VarChar(40)
+  targetId       String?  @map("target_id") @db.VarChar(80)
+  permissionCode String?  @map("permission_code") @db.VarChar(100)
+  order          Int      @default(0)
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([groupId, order])
+  @@map("system_menus")
+}
+
+model Role {
+  id          String     @id @default(uuid()) @db.Uuid
+  code        String     @unique @db.VarChar(64)
+  name        String     @db.VarChar(80)
+  description String?    @db.VarChar(300)
+  permissions String[]   @default([])
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model AppUser {
+  id             String     @id @db.VarChar(64)
+  name           String     @db.VarChar(80)
+  email          String?    @db.VarChar(160)
+  departmentId   String?    @map("department_id") @db.VarChar(64)
+  departmentName String?    @map("department_name") @db.VarChar(100)
+  status         String     @default("ACTIVE") @db.VarChar(20)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  roles          UserRole[]
+
+  @@index([status])
+  @@map("app_users")
+}
+
+model UserRole {
+  userId   String @map("user_id") @db.VarChar(64)
+  roleId   String @map("role_id") @db.Uuid
+  user     AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model ActivityRecord {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  action     String   @db.VarChar(40)
+  operator   String   @db.VarChar(100)
+  message    String   @db.VarChar(500)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+  @@map("activity_records")
+}
+
+model DocumentSequence {
+  typeId    String   @map("type_id") @db.VarChar(64)
+  period    String   @db.Char(6)
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([typeId, period])
+  @@map("document_sequences")
+}
