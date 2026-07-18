@@ -1,0 +1,25 @@
+{
+  "name": "zform-framework",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @zform/api\" \"npm run dev -w @zform/web\"",
+    "build": "npm run build -w @zform/shared && npm run build -w @zform/api && npm run build -w @zform/web",
+    "typecheck": "npm run build -w @zform/shared && npm run typecheck -w @zform/api && npm run typecheck -w @zform/web",
+    "test": "npm run test -w @zform/shared",
+    "start": "npm run start -w @zform/api",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run db:migrate -w @zform/api",
+    "db:deploy": "npm run db:deploy -w @zform/api",
+    "db:seed": "npm run db:seed -w @zform/api",
+    "db:studio": "npm run db:studio -w @zform/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
