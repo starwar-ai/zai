@@ -1,13 +1,13 @@
 # ZForm Framework Agent Development Guide
 
-本文件适用于 `framework/` 目录及其全部子目录。后续 Agent 在修改本框架时，必须优先复用已有的 Schema、统一单据 API、数据权限和应用外壳能力，不要为单个业务需求另建一套平行实现。
+本文件适用于当前仓库根目录及其全部子目录。后续 Agent 在修改本框架时，必须优先复用已有的 Schema、统一单据 API、数据权限和应用外壳能力，不要为单个业务需求另建一套平行实现。
 
 ## 1. 项目定位与边界
 
-`framework/` 是从现有 ZForm 抽取出的通用全栈框架，不是旧业务系统的迁移副本。
+本仓库是从现有 ZForm 抽取出的通用全栈框架，不是旧业务系统的迁移副本。仓库根目录就是 workspace 根目录，不存在额外的 `framework/` 子目录。
 
 - 可以扩展框架核心、通用组件、Schema 协议、插件、API 和 PostgreSQL 模型。
-- 不要把仓库根目录旧 ZForm 的具体业务页面或业务状态直接复制进来。
+- 不要把旧 ZForm 的具体业务页面或业务状态直接复制进来。
 - 新业务类型应通过 `DocumentSchema`、声明式规则和插件接入。
 - 只有无法由通用协议表达的能力，才新增框架扩展点。
 - 新增扩展点时，应先补共享类型，再实现后端和前端，保持协议可序列化。
@@ -15,7 +15,7 @@
 ## 2. 技术栈与目录
 
 ```text
-framework/
+.
 ├── apps/api/                  # Express、Prisma、PostgreSQL、领域服务
 │   ├── prisma/schema.prisma   # 数据模型
 │   ├── prisma/migrations/     # PostgreSQL 迁移
@@ -42,23 +42,31 @@ framework/
 │       ├── App.tsx            # 初始化注册与根组件
 │       ├── main.tsx           # React 挂载入口
 │       └── index.css          # 全局主题样式
-└── packages/shared/           # 前后端共享的可序列化协议与纯函数
+├── packages/shared/           # 前后端共享的可序列化协议与纯函数
+├── docker-compose.yml         # 本地 PostgreSQL 16
+├── package.json               # workspace 根脚本
+└── README.md                  # 使用、能力与当前边界
 ```
 
 共享协议以 `packages/shared/src/index.ts` 为唯一来源。不要在 API 和 Web 中分别复制相似类型。
 
+当前实现入口：
+
+- `packages/shared/src/runtime.ts`：条件、公式、只读模式、下推映射和影响评估等纯函数；
+- `apps/api/src/documents/schemas.ts`：客户报价单、销售合同、采购计划、入库单四个演示 Schema；
+- `apps/api/src/routes/`：健康检查、外壳、系统管理和通用单据四组路由；
+- `apps/web/src/apis/framework-api.ts`：前端访问 API 的唯一客户端；
+- `apps/web/src/components/app-layout.tsx`：bootstrap、菜单、多标签工作区和全局状态的装配入口。
+
 ## 3. 必须执行的命令
 
-在 `framework/` 中运行：
+在仓库根目录运行：
 
 ```bash
 npm install
-npm run dev
 npm run typecheck
 npm test
 npm run build
-npm run db:deploy
-npm run db:seed
 ```
 
 说明：
@@ -68,6 +76,7 @@ npm run db:seed
 - 当前测试使用 Vitest。纯逻辑测试放在源码旁，命名为 `*.test.ts` 或 `*.test.tsx`。
 - 修改 Prisma 模型后先运行 `npm run db:generate -w @zform/api`。
 - 完成功能后至少执行 `npm run typecheck && npm test && npm run build`。
+- 本地联调使用 `npm run dev`；涉及数据库结构或种子数据时再执行 `npm run db:deploy` 和 `npm run db:seed`。
 - 涉及数据库或 UI 的修改，还必须进行真实 PostgreSQL 和浏览器验收。
 
 ## 4. TypeScript 与代码风格
@@ -93,6 +102,7 @@ npm run db:seed
 - 普通配置字段使用 `FormField` 与 Input/Select 等；Schema 单据字段仍使用 `FieldRenderer`。
 - 页面内部切换使用 `Tabs`，应用级多页签使用 `WorkspaceTabs`，二者不可混用。
 - 模态交互使用 `Dialog`/`ConfirmDialog`；新代码不要增加 `window.confirm`。
+- 当前单据编辑器、列表和工作区仍有遗留 `window.confirm`；触及对应交互时优先迁移到 `ConfirmDialog`，不要继续扩散。
 - 共通组件不得包含 `typeId`、单据状态机、权限码或具体业务字段。
 - 新增共通组件时同步从 `components/ui/index.ts` 导出，在 `UiShowcase` 增加示例，并更新组件目录 README。
 
@@ -187,7 +197,7 @@ pluginRegistry.registerExtraTab("my-tab", MyTab)
 - 必须明确是否需要数据范围。
 - 需要数据范围时复用 `requestUser()` 和 `permissionWhere()`。
 - 前端隐藏菜单不是安全控制；后端仍需校验数据权限和操作权限。
-- 单据详情、修改、删除等接口若用于生产，应继续补齐对象级授权，不能把侧边栏权限当成授权完成。
+- 单据详情、修改、删除等接口必须复用对象级数据范围授权；侧边栏权限不能代替后端授权。
 
 ## 8. 单据事务、流程与追溯
 
@@ -279,9 +289,10 @@ pluginRegistry.registerExtraTab("my-tab", MyTab)
 
 1. 在 shared 定义请求和响应类型。
 2. 在 API 服务文件实现领域逻辑。
-3. 在 `index.ts` 用 Zod 校验输入并接入统一错误处理。
-4. 在 `apps/web/src/apis/framework-api.ts` 添加有类型的客户端方法。
-5. 页面只调用 API 客户端，不散落原始 `fetch`。
+3. 在对应 Controller 用 Zod 校验输入并使用 `ok()` 返回统一响应。
+4. 在对应 Route 装配 Controller 和权限 Middleware；不要把业务路由写进 `index.ts`。
+5. 在 `apps/web/src/apis/framework-api.ts` 添加有类型的客户端方法。
+6. 页面只调用 API 客户端，不散落原始 `fetch`。
 
 涉及写操作时检查：
 
@@ -344,5 +355,7 @@ npm run build
 ## 14. 当前已知边界
 
 - 通用 JSONB 列表目前先用 PostgreSQL 完成类型、全文搜索和数据权限基础过滤，再在服务端完成 Schema 逻辑列过滤、排序、聚合和分页。数据量显著增长时，应增加可替换的 SQL/索引适配器，不要破坏现有查询协议。
+- 数据范围已接入列表、详情、修改、删除、流程、下推、影响评估、追溯、工作台和活动记录。新增任何返回或操作单据的入口时，仍必须复用统一对象级授权，不能把当前演示身份来源视为生产安全边界。
+- 通用单据的 create/update 等部分请求体仍直接进入 Service，尚未全部经过完整 Zod Schema；扩展写接口时应同时收紧现有输入边界。
 - 当前用户请求头和 `*` 权限是演示实现。接入生产认证时保留 `ShellUser`、权限码和 `UserContext` 协议，替换身份来源。
-- 当前自动测试主要覆盖 shared 纯逻辑。新增复杂 API 或 React 状态逻辑时，应补 Vitest 测试，不要只依赖手工验收。
+- 根 `npm test` 当前运行 shared 和 API workspace 测试。新增复杂事务权限或 React 状态逻辑时，应补充相应 workspace 测试并更新根测试脚本，不要只依赖手工验收。

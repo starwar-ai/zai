@@ -1,4 +1,4 @@
-import type { ActivityRecord, ApiEnvelope, DashboardData, DetailTableData, DocumentAction, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, ImpactAssessment, ListResponse, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
+import type { ActivityRecord, ApiEnvelope, DashboardData, DeclarationNameApproveRequest, DeclarationNameInput, DeclarationNameJob, DeclarationNameMapping, DeclarationNameRejectRequest, DeclarationNameResolveRequest, DeclarationNameResolveResult, DeclarationNameWritebackRequest, DeclarationNameWritebackResult, DetailTableData, DocumentAction, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, ImpactAssessment, ListResponse, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
 
 // Framework API 的唯一前端入口，组件中不要散落原始 fetch。
 
@@ -46,4 +46,15 @@ export const api = {
   action: (id: string, action: DocumentAction, comment?: string) => request<DocumentRecord>(`/api/documents/${id}/actions/${action}`, { method: "POST", body: JSON.stringify({ comment }) }),
   pushDown: (id: string, targetTypeId: string) => request<DocumentRecord>(`/api/documents/${id}/push-down`, { method: "POST", body: JSON.stringify({ targetTypeId }) }),
   remove: (id: string) => request<null>(`/api/documents/${id}`, { method: "DELETE" }),
+  resolveDeclarationNames: (input: DeclarationNameResolveRequest) => request<DeclarationNameResolveResult>("/api/declaration-names/resolve", { method: "POST", body: JSON.stringify(input) }),
+  generateDeclarationNames: (items: DeclarationNameInput[]) => request<{ jobId: string; inputCount: number }>("/api/declaration-names/generate", { method: "POST", body: JSON.stringify({ items }) }),
+  declarationNameJob: (id: string) => request<DeclarationNameJob>(`/api/declaration-names/jobs/${id}`),
+  declarationNameReviews: (query: { keyword?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== "") params.set(key, String(value)) })
+    return request<ListResponse<DeclarationNameMapping>>(`/api/declaration-names/reviews?${params}`)
+  },
+  approveDeclarationName: (id: string, input: DeclarationNameApproveRequest) => request<DeclarationNameMapping>(`/api/declaration-names/mappings/${id}/approve`, { method: "POST", body: JSON.stringify(input) }),
+  rejectDeclarationName: (id: string, input: DeclarationNameRejectRequest) => request<DeclarationNameMapping>(`/api/declaration-names/mappings/${id}/reject`, { method: "POST", body: JSON.stringify(input) }),
+  writebackDeclarationNames: (input: DeclarationNameWritebackRequest) => request<DeclarationNameWritebackResult>("/api/declaration-names/writeback", { method: "POST", body: JSON.stringify(input) }),
 }

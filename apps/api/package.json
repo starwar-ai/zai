@@ -10,12 +10,15 @@
     "dev": "tsx watch src/index.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "declaration:import": "tsx src/scripts/import-declaration-name-template.ts",
+    "declaration:batch": "tsx src/scripts/build-declaration-name-batch.ts"
   },
   "dependencies": {
     "@zform/shared": "*",
@@ -32,6 +35,7 @@
     "@types/node": "^24.10.1",
     "prisma": "^5.22.0",
     "tsx": "^4.20.6",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
   }
 }

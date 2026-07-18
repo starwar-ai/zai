@@ -3,7 +3,7 @@ import type { RoleRecord, SystemManagementData, SystemMenuRecord, UserRecord, Us
 import { prisma } from "../database.js"
 import { BusinessError } from "../utils/business-error.js"
 
-const menuTargets = ["dashboard", "document-list", "settings", "help", "menu-management", "user-management", "role-management"] as const
+const menuTargets = ["dashboard", "document-list", "settings", "help", "menu-management", "user-management", "role-management", "declaration-name"] as const
 
 export async function assertSystemPermission(userId: string, permission: string): Promise<void> {
   const user = await prisma.appUser.findUnique({ where: { id: userId }, include: { roles: { include: { role: true } } } })

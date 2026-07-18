@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
-import { Bell, Boxes, CircleHelp, FileText, LayoutDashboard, Menu, MenuSquare, PackageOpen, PanelLeftClose, Search, Settings, ShieldCheck, ShoppingCart, Sparkles, Users, Warehouse } from "lucide-react"
+import { Bell, Boxes, CircleHelp, FileText, Languages, LayoutDashboard, Menu, MenuSquare, PackageOpen, PanelLeftClose, Search, Settings, ShieldCheck, ShoppingCart, Sparkles, Users, Warehouse } from "lucide-react"
 import type { DashboardData, DocumentRecord, DocumentSchema, ShellBootstrapData, ShellMenuItem, UserNotification, UserShellSettings } from "@zform/shared"
 import { api } from "@/apis/framework-api"
 import { Dashboard } from "@/components/dashboard"
+import { DeclarationNameReview } from "@/components/declaration-name-review"
 import { DocumentEditor } from "@/components/document-editor"
 import { DocumentList } from "@/components/document-list"
 import { GlobalStatusBar } from "@/components/global-status-bar"
@@ -14,7 +15,7 @@ import { UserSettings } from "@/components/user-settings"
 import { WorkspaceTabs } from "@/components/workspace-tabs"
 import type { WorkspaceTab, WorkspaceView } from "@/types/workspace"
 
-const menuIcons = { LayoutDashboard, FileText, PackageOpen, ShoppingCart, Warehouse, Settings, CircleHelp, MenuSquare, Users, ShieldCheck }
+const menuIcons = { LayoutDashboard, FileText, PackageOpen, ShoppingCart, Warehouse, Settings, CircleHelp, MenuSquare, Users, ShieldCheck, Languages }
 const dashboardTab: WorkspaceTab = { id: "dashboard", title: "工作台", view: { kind: "dashboard" }, closable: false, revision: 0 }
 
 export function AppLayout() {
@@ -76,6 +77,7 @@ export function AppLayout() {
     if (item.target === "menu-management") openView({ kind: "system", entity: "menus" }, "菜单管理", "system:menus")
     if (item.target === "user-management") openView({ kind: "system", entity: "users" }, "用户管理", "system:users")
     if (item.target === "role-management") openView({ kind: "system", entity: "roles" }, "角色管理", "system:roles")
+    if (item.target === "declaration-name") openView({ kind: "declaration-name" }, "报关名称审核", "declaration-name")
   }
   const isMenuActive = (item: ShellMenuItem) => {
     if (item.target === "dashboard") return activeTab.view.kind === "dashboard"
@@ -83,6 +85,7 @@ export function AppLayout() {
     if (item.target === "menu-management") return activeTab.view.kind === "system" && activeTab.view.entity === "menus"
     if (item.target === "user-management") return activeTab.view.kind === "system" && activeTab.view.entity === "users"
     if (item.target === "role-management") return activeTab.view.kind === "system" && activeTab.view.entity === "roles"
+    if (item.target === "declaration-name") return activeTab.view.kind === "declaration-name"
     return activeTab.view.kind === item.target
   }
   const saveUserSettings = async () => { if (settings) { const saved = await api.saveSettings(settings); setSettings(saved); setSidebarOpen(!saved.sidebarCollapsed) } }
@@ -101,6 +104,7 @@ export function AppLayout() {
     if (view.kind === "editor") return <DocumentEditor key={tab.revision} documentId={view.id} schemas={schemas} onDirtyChange={(dirty) => setDirty(tab.id, dirty)} onBack={() => { if (closeTab(tab.id)) openList(view.returnTypeId) }} onOpen={openDocument} onChanged={refreshDashboard} />
     if (view.kind === "settings" && shell && settings) return <UserSettings config={shell.config} settings={settings} onChange={setSettings} onSave={saveUserSettings} />
     if (view.kind === "system") return <SystemManagement entity={view.entity} onShellChanged={async () => { const next = await api.shell(); setShell(next) }} />
+    if (view.kind === "declaration-name") return <DeclarationNameReview key={tab.revision} />
     return <UiShowcase />
   }
 

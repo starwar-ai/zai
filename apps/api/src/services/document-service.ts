@@ -5,9 +5,14 @@ import { prisma } from "../database.js"
 import { getSchema, schemas } from "../documents/schemas.js"
 import { statusTransitions } from "../documents/workflow.js"
 import { BusinessError } from "../utils/business-error.js"
-import { permissionWhere, type UserContext } from "./data-permission-service.js"
+import { permissionWhere, visibleDocumentsWhere, type UserContext } from "./data-permission-service.js"
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient
+const documentTypeIds = schemas.map((schema) => schema.typeId)
+
+async function visibilityWhere(user: UserContext, client: DatabaseClient = prisma): Promise<Prisma.DocumentWhereInput> {
+  return visibleDocumentsWhere(documentTypeIds, user, client)
+}
 
 export function operator(headers: Record<string, string | string[] | undefined>): string {
   const name = headers["x-user-name"]
@@ -149,15 +154,17 @@ export async function listDocuments(params: DocumentListQuery, user: UserContext
   return { items: rows.map(toDocumentRecord), total, page, pageSize, pageCount: Math.max(1, Math.ceil(total / pageSize)) }
 }
 
-export async function findDocument(id: string, client: DatabaseClient = prisma): Promise<DocumentRecord> {
-  const document = await client.document.findUnique({ where: { id } })
+export async function findDocument(id: string, user: UserContext, client: DatabaseClient = prisma): Promise<DocumentRecord> {
+  const document = await client.document.findFirst({ where: { id, ...(await visibilityWhere(user, client)) } })
   if (!document) throw new BusinessError("单据不存在或已被删除。", 404)
   return toDocumentRecord(document)
 }
 
-export async function listActivities(documentId?: string): Promise<ActivityRecord[]> {
+export async function listActivities(user: UserContext, documentId?: string): Promise<ActivityRecord[]> {
+  const visibleWhere = await visibilityWhere(user)
+  if (documentId) await findDocument(documentId, user)
   const rows = await prisma.activityRecord.findMany({
-    where: documentId ? { documentId } : undefined,
+    where: { ...(documentId ? { documentId } : {}), document: { is: visibleWhere } },
     orderBy: { createdAt: "desc" },
     take: documentId ? 100 : 50,
   })
@@ -169,9 +176,9 @@ export async function createDocument(input: { typeId: string; masterData?: Recor
   return toDocumentRecord(document)
 }
 
-export async function updateDocument(id: string, input: { masterData?: Record<string, unknown>; detailTables?: DetailTableData[]; version?: number }, headers: Record<string, string | string[] | undefined>): Promise<DocumentRecord> {
+export async function updateDocument(id: string, input: { masterData?: Record<string, unknown>; detailTables?: DetailTableData[]; version?: number }, headers: Record<string, string | string[] | undefined>, user: UserContext): Promise<DocumentRecord> {
   return prisma.$transaction(async (client) => {
-    const document = await findDocument(id, client)
+    const document = await findDocument(id, user, client)
     if (!["DRAFT", "REJECTED"].includes(document.status)) throw new BusinessError("只有草稿或已驳回的单据可以编辑。")
     if (input.version !== undefined && input.version !== document.version) throw new BusinessError("单据已被其他用户更新，请刷新后重试。", 409)
     const masterData = { ...document.masterData, ...input.masterData, status: document.status }
@@ -187,21 +194,21 @@ export async function updateDocument(id: string, input: { masterData?: Record<st
     })
     if (updated.count !== 1) throw new BusinessError("单据已被其他用户更新，请刷新后重试。", 409)
     await client.activityRecord.create({ data: { documentId: id, action: "update", operator: operator(headers), message: `更新了${document.code}` } })
-    return findDocument(id, client)
+    return findDocument(id, user, client)
   })
 }
 
-export async function removeDocument(id: string): Promise<void> {
+export async function removeDocument(id: string, user: UserContext): Promise<void> {
   await prisma.$transaction(async (client) => {
-    const document = await findDocument(id, client)
+    const document = await findDocument(id, user, client)
     if (document.status !== "DRAFT") throw new BusinessError("只有草稿单据可以删除。")
     await client.document.delete({ where: { id } })
   })
 }
 
-export async function executeAction(id: string, action: DocumentAction, headers: Record<string, string | string[] | undefined>, comment?: string): Promise<DocumentRecord> {
+export async function executeAction(id: string, action: DocumentAction, headers: Record<string, string | string[] | undefined>, user: UserContext, comment?: string): Promise<DocumentRecord> {
   return prisma.$transaction(async (client) => {
-    const document = await findDocument(id, client)
+    const document = await findDocument(id, user, client)
     const schema = getSchema(document.typeId)
     const configured = schema.formActions?.find((item) => item.command === "workflow" && item.workflowAction === action)
     const legacyAllowed = (schema.actions?.[document.status] || []).includes(action)
@@ -219,14 +226,14 @@ export async function executeAction(id: string, action: DocumentAction, headers:
     const suffix = comment?.trim() ? `：${comment.trim()}` : ""
     const actionText = action === "approve" ? "审批通过" : action === "reject" ? "驳回" : action === "submit" ? "提交审批" : action === "complete" ? "标记完成" : "取消"
     await client.activityRecord.create({ data: { documentId: id, action, operator: operator(headers), message: `${actionText} ${document.code}${suffix}` } })
-    return findDocument(id, client)
+    return findDocument(id, user, client)
   })
 }
 
-export async function pushDown(id: string, targetTypeId: string, headers: Record<string, string | string[] | undefined>): Promise<DocumentRecord> {
+export async function pushDown(id: string, targetTypeId: string, headers: Record<string, string | string[] | undefined>, user: UserContext): Promise<DocumentRecord> {
   try {
     return await prisma.$transaction(async (client) => {
-      const source = await findDocument(id, client)
+      const source = await findDocument(id, user, client)
       const sourceSchema = getSchema(source.typeId)
       const targetSchema = getSchema(targetTypeId)
       const rule = sourceSchema.pushDownRules?.find((item) => item.targetTypeId === targetTypeId)
@@ -245,33 +252,38 @@ export async function pushDown(id: string, targetTypeId: string, headers: Record
   }
 }
 
-export async function assessImpact(id: string, nextMasterData: Record<string, unknown>): Promise<ImpactAssessment> {
-  const source = await findDocument(id)
+export async function assessImpact(id: string, nextMasterData: Record<string, unknown>, user: UserContext): Promise<ImpactAssessment> {
+  const source = await findDocument(id, user)
   const schema = getSchema(source.typeId)
   const downstreamRows = await prisma.document.findMany({ where: { sourceDocumentId: id } })
   return assessDocumentImpact(source, nextMasterData, schema.impactRules || [], downstreamRows.map(toDocumentRecord))
 }
 
-export async function getTrace(id: string): Promise<TraceGraph> {
-  const source = await findDocument(id)
-  const downstreamRows = await prisma.document.findMany({ where: { sourceDocumentId: id }, orderBy: { createdAt: "asc" } })
+export async function getTrace(id: string, user: UserContext): Promise<TraceGraph> {
+  const source = await findDocument(id, user)
+  const visibleWhere = await visibilityWhere(user)
+  const [downstreamRows, upstream] = await Promise.all([
+    prisma.document.findMany({ where: { sourceDocumentId: id, ...visibleWhere }, orderBy: { createdAt: "asc" } }),
+    source.sourceRef ? prisma.document.findFirst({ where: { id: source.sourceRef.documentId, ...visibleWhere }, select: { id: true } }) : null,
+  ])
   return {
-    upstream: source.sourceRef,
+    upstream: upstream ? source.sourceRef : undefined,
     downstream: downstreamRows.map((row) => ({ documentId: row.id, typeId: row.typeId, code: row.code })),
   }
 }
 
-export async function getDashboard(): Promise<DashboardData> {
+export async function getDashboard(user: UserContext): Promise<DashboardData> {
   const monthStart = new Date()
   monthStart.setUTCDate(1)
   monthStart.setUTCHours(0, 0, 0, 0)
+  const visibleWhere = await visibilityWhere(user)
   const [totalDocuments, statusGroups, typeGroups, completedThisMonth, recentRows, activityRows] = await Promise.all([
-    prisma.document.count(),
-    prisma.document.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.document.groupBy({ by: ["typeId"], _count: { _all: true } }),
-    prisma.document.count({ where: { status: PrismaDocumentStatus.COMPLETED, updatedAt: { gte: monthStart } } }),
-    prisma.document.findMany({ orderBy: { updatedAt: "desc" }, take: 6 }),
-    prisma.activityRecord.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
+    prisma.document.count({ where: visibleWhere }),
+    prisma.document.groupBy({ by: ["status"], where: visibleWhere, _count: { _all: true } }),
+    prisma.document.groupBy({ by: ["typeId"], where: visibleWhere, _count: { _all: true } }),
+    prisma.document.count({ where: { ...visibleWhere, status: PrismaDocumentStatus.COMPLETED, updatedAt: { gte: monthStart } } }),
+    prisma.document.findMany({ where: visibleWhere, orderBy: { updatedAt: "desc" }, take: 6 }),
+    prisma.activityRecord.findMany({ where: { document: { is: visibleWhere } }, orderBy: { createdAt: "desc" }, take: 8 }),
   ])
   const statusCounts = Object.fromEntries(Object.values(PrismaDocumentStatus).map((status) => [status, statusGroups.find((group) => group.status === status)?._count._all || 0])) as Record<DocumentStatus, number>
   return {

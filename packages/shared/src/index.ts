@@ -280,7 +280,7 @@ export interface ShellMenuItem {
   id: string
   label: string
   icon: string
-  target: "dashboard" | "document-list" | "settings" | "help" | "menu-management" | "user-management" | "role-management"
+  target: "dashboard" | "document-list" | "settings" | "help" | "menu-management" | "user-management" | "role-management" | "declaration-name"
   targetId?: string
   requiredPermissions?: string[]
 }
@@ -342,6 +342,79 @@ export interface UserRecord {
 }
 
 export interface SystemManagementData { menus: SystemMenuRecord[]; roles: RoleRecord[]; users: UserRecord[] }
+
+export type DeclarationNameMappingStatus = "PENDING" | "GENERATING" | "APPROVED" | "REVIEW_REQUIRED" | "REJECTED" | "FAILED"
+export type DeclarationNameJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
+
+export interface DeclarationNameInput { name: string; nameEng: string; shipmentItemId?: string }
+export interface DeclarationNameResolveRequest { items: DeclarationNameInput[]; createMissing?: boolean }
+export interface DeclarationNameMapping {
+  id: string
+  name: string
+  nameEng: string
+  declarationName?: string
+  customsDeclarationNameEng?: string
+  confidence?: number
+  reviewRequired: boolean
+  reviewReason: string
+  status: DeclarationNameMappingStatus
+  promptVersion?: string
+  modelVersion?: string
+  approvedBy?: string
+  approvedAt?: string
+  updatedAt: string
+}
+export interface DeclarationNameResolveResult { jobId?: string; items: DeclarationNameMapping[] }
+export interface DeclarationNameReviewQuery { keyword?: string; page?: number; pageSize?: number }
+export interface DeclarationNameApproveRequest { declarationName?: string; customsDeclarationNameEng?: string }
+export interface DeclarationNameRejectRequest { reason: string }
+export interface DeclarationNameJob {
+  id: string
+  status: DeclarationNameJobStatus
+  inputCount: number
+  successCount: number
+  failedCount: number
+  reviewCount: number
+  errorMessage?: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+export interface DeclarationNameWritebackRequest { mappingIds?: string[]; shipmentItemIds?: string[]; includeDeclarationItems?: boolean }
+export interface DeclarationNameWritebackResult { shipmentItemsAffected: number; declarationItemsAffected: number }
+
+export interface GeneratedDeclarationName {
+  declarationName: string
+  customsDeclarationNameEng: string
+  confidence: number
+  reviewRequired: boolean
+  reviewReason: string
+  provider?: string
+  model?: string
+}
+
+export interface DeclarationNameReviewDecision { status: "APPROVED" | "REVIEW_REQUIRED"; reviewRequired: boolean; reviewReason: string }
+
+export function normalizeDeclarationName(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ").replace(/[，。；：、,.;:]+/g, ",").toLowerCase()
+}
+
+const declarationForcedReviewWords = ["电池", "充电器", "刀片", "液体", "喷雾", "配件", "battery", "charger", "blade", "liquid", "spray", "parts"]
+
+export function evaluateDeclarationNameReview(input: { name: string; nameEng: string; generated: GeneratedDeclarationName; autoApproveConfidence?: number }): DeclarationNameReviewDecision {
+  const { generated } = input
+  const threshold = input.autoApproveConfidence ?? 0.9
+  const reasons: string[] = []
+  const combined = [input.name, input.nameEng, generated.declarationName, generated.customsDeclarationNameEng].join(" ").toLowerCase()
+  if (!generated.declarationName.trim() || !generated.customsDeclarationNameEng.trim()) reasons.push("中英文报关名不能为空")
+  if (generated.customsDeclarationNameEng !== generated.customsDeclarationNameEng.toUpperCase()) reasons.push("英文报关名必须全大写")
+  if (generated.confidence < threshold) reasons.push(`模型置信度低于 ${threshold}`)
+  if (generated.reviewRequired) reasons.push(generated.reviewReason.trim() || "模型建议人工复核")
+  if (declarationForcedReviewWords.some((word) => combined.includes(word))) reasons.push("命中强制复核品类关键词")
+  if (generated.declarationName.length > 100 || generated.customsDeclarationNameEng.length > 100) reasons.push("报关名长度超限")
+  const uniqueReasons = [...new Set(reasons)]
+  return uniqueReasons.length ? { status: "REVIEW_REQUIRED", reviewRequired: true, reviewReason: uniqueReasons.join("；") } : { status: "APPROVED", reviewRequired: false, reviewReason: "" }
+}
 
 export interface ApiEnvelope<T> { success: boolean; message: string; data: T }
 

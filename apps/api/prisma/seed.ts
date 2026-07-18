@@ -74,6 +74,7 @@ async function main(): Promise<void> {
     { id: "document:sales_contract", groupId: "documents", groupLabel: "业务单据", label: "销售合同", icon: "PackageOpen", target: "document-list", targetId: "sales_contract", permissionCode: "document:sales_contract:view", order: 30 },
     { id: "document:purchase_plan", groupId: "documents", groupLabel: "业务单据", label: "采购计划", icon: "ShoppingCart", target: "document-list", targetId: "purchase_plan", permissionCode: "document:purchase_plan:view", order: 40 },
     { id: "document:warehouse_inbound", groupId: "documents", groupLabel: "业务单据", label: "入库单", icon: "Warehouse", target: "document-list", targetId: "warehouse_inbound", permissionCode: "document:warehouse_inbound:view", order: 50 },
+    { id: "declaration-name", groupId: "tools", groupLabel: "智能工具", label: "报关名称审核", icon: "Languages", target: "declaration-name", permissionCode: "declaration-name:view", order: 60 },
     { id: "system:menus", groupId: "system", groupLabel: "系统管理", label: "菜单管理", icon: "MenuSquare", target: "menu-management", permissionCode: "system:menu:manage", order: 70 },
     { id: "system:users", groupId: "system", groupLabel: "系统管理", label: "用户管理", icon: "Users", target: "user-management", permissionCode: "system:user:manage", order: 80 },
     { id: "system:roles", groupId: "system", groupLabel: "系统管理", label: "角色管理", icon: "ShieldCheck", target: "role-management", permissionCode: "system:role:manage", order: 90 },
@@ -83,8 +84,14 @@ async function main(): Promise<void> {
   for (const menu of menus) await prisma.systemMenu.upsert({ where: { id: menu.id }, update: menu, create: menu })
   const adminRole = await prisma.role.upsert({ where: { code: "SYSTEM_ADMIN" }, update: { name: "系统管理员", permissions: ["*"] }, create: { code: "SYSTEM_ADMIN", name: "系统管理员", description: "拥有 framework 全部管理和业务权限", permissions: ["*"] } })
   await prisma.role.upsert({ where: { code: "BUSINESS_VIEWER" }, update: {}, create: { code: "BUSINESS_VIEWER", name: "业务查看员", description: "可查看工作台与业务单据", permissions: ["dashboard:view", "document:quotation:view", "document:sales_contract:view", "document:purchase_plan:view", "document:warehouse_inbound:view", "settings:use"] } })
+  await prisma.role.upsert({ where: { code: "DECLARATION_REVIEWER" }, update: { permissions: ["dashboard:view", "declaration-name:view", "declaration-name:generate", "declaration-name:review", "declaration-name:writeback"] }, create: { code: "DECLARATION_REVIEWER", name: "报关名称审核员", description: "可生成、复核和显式回写报关名称", permissions: ["dashboard:view", "declaration-name:view", "declaration-name:generate", "declaration-name:review", "declaration-name:writeback"] } })
   await prisma.appUser.upsert({ where: { id: "framework-user" }, update: { name: "林默", status: "ACTIVE" }, create: { id: "framework-user", name: "林默", email: "linmo@example.local", departmentId: "demo-department", departmentName: "演示部门", status: "ACTIVE" } })
   await prisma.userRole.upsert({ where: { userId_roleId: { userId: "framework-user", roleId: adminRole.id } }, update: {}, create: { userId: "framework-user", roleId: adminRole.id } })
+  await prisma.declarationNameMapping.upsert({
+    where: { normalizedName_normalizedNameEng: { normalizedName: "20v 2ah电池包", normalizedNameEng: "20v 2ah battery pack" } },
+    update: {},
+    create: { normalizedName: "20v 2ah电池包", normalizedNameEng: "20v 2ah battery pack", rawName: "20V 2AH电池包", rawNameEng: "20V 2AH battery pack", declarationName: "电池包", customsDeclarationNameEng: "BATTERY PACK", confidence: 0.82, reviewRequired: true, reviewReason: "命中强制复核品类关键词", status: "REVIEW_REQUIRED", source: "seed", promptVersion: "v1", modelVersion: "seed:demo" },
+  })
   console.log(`已初始化 ${documents.length} 张演示单据。`)
 }
 
