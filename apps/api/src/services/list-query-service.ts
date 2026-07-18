@@ -8,6 +8,10 @@ import { BusinessError } from "../utils/business-error.js"
 import { toDocumentRecord } from "./document-service.js"
 import { permissionWhere, type UserContext } from "./data-permission-service.js"
 import { getSchema } from "../documents/schemas.js"
+import { PostgresDocumentListQueryAdapter } from "./postgres-list-query-adapter.js"
+import type { DocumentListQueryAdapter } from "./list-query-adapter.js"
+
+const postgresAdapter = new PostgresDocumentListQueryAdapter()
 
 const isGroup = (value: ListFilterCondition | ListFilterGroup): value is ListFilterGroup => "logic" in value
 
@@ -97,8 +101,14 @@ function aggregate(rows: DocumentListRow[], definitions: ListAggregateDefinition
 }
 
 export async function queryDocuments(request: DocumentQueryRequest, user: UserContext): Promise<DocumentQueryResult> {
+  return queryDocumentsWithAdapter(request, user, postgresAdapter)
+}
+
+export async function queryDocumentsWithAdapter(request: DocumentQueryRequest, user: UserContext, adapter: DocumentListQueryAdapter): Promise<DocumentQueryResult> {
   const schema = getSchema(request.typeId)
   if (!schema.list) throw new BusinessError(`单据类型“${schema.typeName}”没有配置通用列表。`)
+  const mode = request.mode || schema.list.defaultMode || "document"
+  if (!(schema.list.modes || ["document"]).includes(mode)) throw new BusinessError("当前 Schema 不支持所选列表模式。")
   const columnMap = new Map(schema.list.columns.map((column) => [column.id, column]))
   for (const sort of request.sorting || []) if (!columnMap.get(sort.columnId)?.sortable) throw new BusinessError(`列“${sort.columnId}”不允许排序。`)
   const validateFilters = (group?: ListFilterGroup): void => group?.conditions.forEach((item) => {
@@ -106,6 +116,7 @@ export async function queryDocuments(request: DocumentQueryRequest, user: UserCo
     else if (!columnMap.get(item.columnId)?.filterable) throw new BusinessError(`列“${item.columnId}”不允许筛选。`)
   })
   validateFilters(request.filters)
+  if (adapter.supports(schema, request)) return adapter.query(schema, request, user)
   const page = Math.max(1, request.page || 1)
   const pageSize = Math.min(100, Math.max(5, request.pageSize || 20))
   const where: Prisma.DocumentWhereInput = {
