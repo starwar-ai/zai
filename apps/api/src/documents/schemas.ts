@@ -1,4 +1,5 @@
 import type { DocumentListDefinition, DocumentSchema, FieldSchema, FormActionDefinition, ListActionDefinition } from "@zform/shared"
+import { BusinessError } from "../utils/business-error.js"
 
 // 单据定义只包含可序列化元数据，业务接入不需要新增路由或控制器。
 
@@ -225,6 +226,6 @@ export const schemas: DocumentSchema[] = [
 
 export function getSchema(typeId: string): DocumentSchema {
   const schema = schemas.find((item) => item.typeId === typeId)
-  if (!schema) throw new Error(`单据类型“${typeId}”未注册。`)
+  if (!schema) throw new BusinessError(`单据类型“${typeId}”未注册。`)
   return schema
 }

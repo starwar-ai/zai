@@ -22,10 +22,19 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
 const emptyOrNumberSchema = z.union([z.number().finite().nonnegative(), z.literal("")])
 const shortStringSchema = z.string().max(MAX_TEXT_LENGTH)
 const longStringSchema = z.string().max(MAX_LONG_TEXT_LENGTH)
+const dateSchema = z.union([
+  z.literal(""),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期必须使用 YYYY-MM-DD 格式。").refine((value) => {
+    const [year, month, day] = value.split("-").map(Number)
+    const date = new Date(Date.UTC(year, month - 1, day))
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  }, "日期无效。"),
+])
 
 function fieldValueSchema(field: FieldSchema): z.ZodTypeAny {
   if (field.type === "number") return emptyOrNumberSchema.optional()
   if (field.type === "checkbox") return z.boolean().optional()
+  if (field.type === "date") return dateSchema.optional()
   if (field.type === "textarea") return longStringSchema.optional()
   if (field.type === "select" && field.options?.length) {
     const allowed = new Set(field.options.map((option) => option.value))
@@ -75,7 +84,7 @@ function detailTableSchema(table: DetailTableSchema, allowSourceReference: boole
   if (allowSourceReference) rowShape.sourceRef = sourceReferenceSchema().optional()
   return z.object({
     tableId: z.literal(table.id),
-    rows: z.array(z.object(rowShape).strict()).max(table.maxRows || MAX_DETAIL_ROWS).superRefine((rows, context) => {
+    rows: z.array(z.object(rowShape).strict()).max(table.maxRows ?? MAX_DETAIL_ROWS).superRefine((rows, context) => {
       const seen = new Set<string>()
       rows.forEach((row, index) => {
         if (seen.has(row.id as string)) context.addIssue({ code: z.ZodIssueCode.custom, path: [index, "id"], message: "明细行 ID 不能重复。" })

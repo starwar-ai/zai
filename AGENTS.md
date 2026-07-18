@@ -356,6 +356,6 @@ npm run build
 
 - 通用列表通过 `DocumentListQueryAdapter` 与执行层解耦；默认 PostgreSQL 适配器负责 JSONB 主表/明细过滤、排序、聚合和分页，并使用 trigram 与 JSONB GIN 索引。扩展自定义系统列或其他数据库执行引擎时，应实现新适配器并保持共享查询协议不变。
 - 数据范围已接入列表、详情、修改、删除、流程、下推、影响评估、追溯、工作台和活动记录。新增任何返回或操作单据的入口时，仍必须复用统一对象级授权，不能把当前演示身份来源视为生产安全边界。
-- 通用单据的 create/update 等部分请求体仍直接进入 Service，尚未全部经过完整 Zod Schema；扩展写接口时应同时收紧现有输入边界。
+- 通用单据的创建、更新、影响评估、流程和下推请求均经过 Zod 校验；主数据和明细数据按 `DocumentSchema` 动态限制字段、类型、长度和数量。扩展写接口时必须继续先定义 shared 请求类型并收紧 Controller 输入边界。
 - 当前用户请求头和 `*` 权限是演示实现。接入生产认证时保留 `ShellUser`、权限码和 `UserContext` 协议，替换身份来源。
 - 根 `npm test` 当前运行 shared 和 API workspace 测试。新增复杂事务权限或 React 状态逻辑时，应补充相应 workspace 测试并更新根测试脚本，不要只依赖手工验收。
