@@ -225,6 +225,22 @@ export interface DocumentRecord {
   version: number
 }
 
+export interface DocumentCreateRequest {
+  typeId: string
+  masterData?: Record<string, unknown>
+  detailTables?: DetailTableData[]
+}
+
+export interface DocumentUpdateRequest {
+  masterData?: Record<string, unknown>
+  detailTables?: DetailTableData[]
+  version: number
+}
+
+export interface DocumentActionRequest { comment?: string }
+export interface DocumentImpactRequest { masterData: Record<string, unknown> }
+export interface DocumentPushDownRequest { targetTypeId: string }
+
 export interface ActivityRecord { id: string; documentId: string; action: string; operator: string; message: string; createdAt: string }
 export interface ListResponse<T> { items: T[]; total: number; page: number; pageSize: number; pageCount: number }
 export interface DocumentListQuery { typeId?: string; status?: DocumentStatus; search?: string; page?: number; pageSize?: number; sortBy?: "code" | "status" | "createdAt" | "updatedAt"; sortDirection?: "asc" | "desc" }

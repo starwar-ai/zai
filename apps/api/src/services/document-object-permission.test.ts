@@ -22,7 +22,7 @@ const database = vi.hoisted(() => ({
 
 vi.mock("../database.js", () => ({ prisma: database }))
 
-import { assessImpact, executeAction, findDocument, getDashboard, getTrace, listActivities, pushDown, removeDocument, updateDocument } from "./document-service.js"
+import { assessImpact, executeAction, findDocument, getDashboard, getTrace, listActivities, preserveDetailSourceReferences, pushDown, removeDocument, updateDocument } from "./document-service.js"
 
 const user = { userId: "user-a", departmentId: "department-a" }
 const headers = { "x-user-id": "user-a", "x-user-department-id": "department-a" }
@@ -55,7 +55,7 @@ describe("单据对象级授权", () => {
     ["指定单据活动", () => listActivities(user, "document-b")],
     ["影响评估", () => assessImpact("document-b", {}, user)],
     ["追溯", () => getTrace("document-b", user)],
-    ["修改", () => updateDocument("document-b", {}, headers, user)],
+    ["修改", () => updateDocument("document-b", { version: 1 }, headers, user)],
     ["删除", () => removeDocument("document-b", user)],
     ["流程", () => executeAction("document-b", "submit", headers, user)],
     ["下推", () => pushDown("document-b", "sales_contract", headers, user)],
@@ -91,5 +91,23 @@ describe("单据对象级授权", () => {
     expect(database.activityRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { document: { is: { OR: expect.any(Array) } } },
     }))
+  })
+})
+
+describe("明细来源引用", () => {
+  it("保留数据库中的来源引用并移除客户端为新行伪造的引用", () => {
+    const original = { documentId: "71f0114c-4c21-4bb4-9c68-320b19384b6e", typeId: "quotation", code: "QT-001", tableId: "items", rowId: "source-row" }
+    const forged = { documentId: "87d5d255-f629-4674-bb63-edfbb5d4e88d", typeId: "quotation", code: "QT-999", tableId: "items", rowId: "forged-row" }
+
+    const result = preserveDetailSourceReferences(
+      [{ tableId: "items", rows: [{ id: "existing-row", data: { quantity: 1 }, sourceRef: original }] }],
+      [{ tableId: "items", rows: [
+        { id: "existing-row", data: { quantity: 2 }, sourceRef: forged },
+        { id: "new-row", data: { quantity: 3 }, sourceRef: forged },
+      ] }],
+    )
+
+    expect(result[0].rows[0].sourceRef).toEqual(original)
+    expect(result[0].rows[1].sourceRef).toBeUndefined()
   })
 })

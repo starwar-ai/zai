@@ -1,6 +1,6 @@
 import { DocumentStatus as PrismaDocumentStatus, Prisma, type Document as PrismaDocument, type PrismaClient } from "@prisma/client"
 import { randomUUID } from "node:crypto"
-import { applyPushDownRule, assessDocumentImpact, evaluateCondition, type ActivityRecord, type DashboardData, type DetailRowData, type DetailTableData, type DocumentAction, type DocumentListQuery, type DocumentRecord, type DocumentStatus, type ImpactAssessment, type ListResponse, type TraceGraph } from "@zform/shared"
+import { applyPushDownRule, assessDocumentImpact, evaluateCondition, type ActivityRecord, type DashboardData, type DetailRowData, type DetailTableData, type DocumentAction, type DocumentCreateRequest, type DocumentListQuery, type DocumentRecord, type DocumentStatus, type DocumentUpdateRequest, type ImpactAssessment, type ListResponse, type TraceGraph } from "@zform/shared"
 import { prisma } from "../database.js"
 import { getSchema, schemas } from "../documents/schemas.js"
 import { statusTransitions } from "../documents/workflow.js"
@@ -171,18 +171,29 @@ export async function listActivities(user: UserContext, documentId?: string): Pr
   return rows.map(toActivityRecord)
 }
 
-export async function createDocument(input: { typeId: string; masterData?: Record<string, unknown>; detailTables?: DetailTableData[] }, headers: Record<string, string | string[] | undefined>): Promise<DocumentRecord> {
+export async function createDocument(input: DocumentCreateRequest, headers: Record<string, string | string[] | undefined>): Promise<DocumentRecord> {
   const document = await prisma.$transaction((client) => createInTransaction(client, input, owner(headers)))
   return toDocumentRecord(document)
 }
 
-export async function updateDocument(id: string, input: { masterData?: Record<string, unknown>; detailTables?: DetailTableData[]; version?: number }, headers: Record<string, string | string[] | undefined>, user: UserContext): Promise<DocumentRecord> {
+export function preserveDetailSourceReferences(current: DetailTableData[], next: DetailTableData[]): DetailTableData[] {
+  const sourceReferences = new Map(current.flatMap((table) => table.rows.flatMap((row) => row.sourceRef ? [[`${table.tableId}:${row.id}`, row.sourceRef] as const] : [])))
+  return next.map((table) => ({
+    ...table,
+    rows: table.rows.map((row) => {
+      const sourceRef = sourceReferences.get(`${table.tableId}:${row.id}`)
+      return { id: row.id, data: row.data, ...(sourceRef ? { sourceRef } : {}) }
+    }),
+  }))
+}
+
+export async function updateDocument(id: string, input: DocumentUpdateRequest, headers: Record<string, string | string[] | undefined>, user: UserContext): Promise<DocumentRecord> {
   return prisma.$transaction(async (client) => {
     const document = await findDocument(id, user, client)
     if (!["DRAFT", "REJECTED"].includes(document.status)) throw new BusinessError("只有草稿或已驳回的单据可以编辑。")
-    if (input.version !== undefined && input.version !== document.version) throw new BusinessError("单据已被其他用户更新，请刷新后重试。", 409)
+    if (input.version !== document.version) throw new BusinessError("单据已被其他用户更新，请刷新后重试。", 409)
     const masterData = { ...document.masterData, ...input.masterData, status: document.status }
-    const detailTables = input.detailTables || document.detailTables
+    const detailTables = input.detailTables ? preserveDetailSourceReferences(document.detailTables, input.detailTables) : document.detailTables
     validateDocument(document.typeId, masterData, detailTables)
     const schema = getSchema(document.typeId)
     const downstreamRows = await client.document.findMany({ where: { sourceDocumentId: id } })

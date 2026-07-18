@@ -1,4 +1,4 @@
-import type { ActivityRecord, ApiEnvelope, DashboardData, DeclarationNameApproveRequest, DeclarationNameInput, DeclarationNameJob, DeclarationNameMapping, DeclarationNameRejectRequest, DeclarationNameResolveRequest, DeclarationNameResolveResult, DeclarationNameWritebackRequest, DeclarationNameWritebackResult, DetailTableData, DocumentAction, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, ImpactAssessment, ListResponse, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
+import type { ActivityRecord, ApiEnvelope, DashboardData, DeclarationNameApproveRequest, DeclarationNameInput, DeclarationNameJob, DeclarationNameMapping, DeclarationNameRejectRequest, DeclarationNameResolveRequest, DeclarationNameResolveResult, DeclarationNameWritebackRequest, DeclarationNameWritebackResult, DocumentAction, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, DocumentUpdateRequest, ImpactAssessment, ListResponse, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
 
 // Framework API 的唯一前端入口，组件中不要散落原始 fetch。
 
@@ -42,7 +42,7 @@ export const api = {
   trace: (documentId: string) => request<TraceGraph>(`/api/documents/${documentId}/trace`),
   impact: (documentId: string, masterData: Record<string, unknown>) => request<ImpactAssessment>(`/api/documents/${documentId}/impact`, { method: "POST", body: JSON.stringify({ masterData }) }),
   create: (typeId: string) => request<DocumentRecord>("/api/documents", { method: "POST", body: JSON.stringify({ typeId }) }),
-  update: (id: string, input: { masterData: Record<string, unknown>; detailTables: DetailTableData[]; version: number }) => request<DocumentRecord>(`/api/documents/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  update: (id: string, input: DocumentUpdateRequest) => request<DocumentRecord>(`/api/documents/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   action: (id: string, action: DocumentAction, comment?: string) => request<DocumentRecord>(`/api/documents/${id}/actions/${action}`, { method: "POST", body: JSON.stringify({ comment }) }),
   pushDown: (id: string, targetTypeId: string) => request<DocumentRecord>(`/api/documents/${id}/push-down`, { method: "POST", body: JSON.stringify({ targetTypeId }) }),
   remove: (id: string) => request<null>(`/api/documents/${id}`, { method: "DELETE" }),
