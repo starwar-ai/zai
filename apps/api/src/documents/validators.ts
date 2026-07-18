@@ -1,4 +1,4 @@
-import type { DetailTableSchema, DocumentCreateRequest, DocumentImpactRequest, DocumentQueryRequest, DocumentSchema, DocumentUpdateRequest, FieldSchema } from "@zform/shared"
+import type { DetailTableSchema, DocumentActionRequest, DocumentCreateRequest, DocumentImpactRequest, DocumentPushDownRequest, DocumentQueryRequest, DocumentSchema, DocumentUpdateRequest, FieldSchema } from "@zform/shared"
 import { z } from "zod"
 
 const MAX_TEXT_LENGTH = 500
@@ -162,8 +162,8 @@ export const documentQuerySchema = z.object({
 }).transform((value) => value as DocumentQueryRequest)
 
 export const documentActionSchema = z.enum(["submit", "approve", "reject", "complete", "cancel"])
-export const documentActionInputSchema = z.object({ comment: z.string().trim().max(500).optional() }).strict()
-export const pushDownSchema = z.object({ targetTypeId: z.string().min(1).max(64) }).strict()
+export const documentActionInputSchema: z.ZodType<DocumentActionRequest> = z.object({ comment: z.string().trim().max(500).optional() }).strict()
+export const pushDownSchema: z.ZodType<DocumentPushDownRequest> = z.object({ targetTypeId: z.string().min(1).max(64) }).strict()
 export const documentListSchema = z.object({
   typeId: z.string().optional(),
   status: z.enum(["DRAFT", "PENDING", "APPROVED", "IN_PROGRESS", "COMPLETED", "REJECTED", "CANCELLED"]).optional(),
