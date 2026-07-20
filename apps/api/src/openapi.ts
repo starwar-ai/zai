@@ -38,6 +38,38 @@ export const openApiDocument = {
         },
       },
     },
+    "/api/external/declaration-names/convert/batch": {
+      post: {
+        tags: ["报关品名"],
+        summary: "批量转换中英文商品名",
+        description: "单次最多处理 100 条，按输入顺序逐项返回结果；单项失败不会中断整批处理。历史映射复用和人工复核规则与单条接口一致。",
+        operationId: "convertDeclarationNamesBatch",
+        security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ExternalDeclarationNameBatchConvertRequest" },
+              example: {
+                items: [
+                  { name: "18V 无刷充电式电钻套装 蓝色", nameEng: "18V Brushless Cordless Drill Kit Blue", clientRequestId: "ERP-001" },
+                  { name: "塑料工具箱", nameEng: "Plastic Tool Box", clientRequestId: "ERP-002" },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "批量处理完成；items 中包含每一项的成功结果或失败原因。",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalDeclarationNameBatchConvertResponse" } } },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -65,9 +97,44 @@ export const openApiDocument = {
           source: { type: "string", enum: ["CACHE", "MODEL"] }, modelVersion: { type: "string" },
         },
       },
+      ExternalDeclarationNameBatchConvertRequest: {
+        type: "object", additionalProperties: false, required: ["items"],
+        properties: {
+          items: { type: "array", minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/ExternalDeclarationNameConvertRequest" } },
+        },
+      },
+      ExternalDeclarationNameBatchItemResult: {
+        oneOf: [
+          {
+            type: "object", additionalProperties: false, required: ["index", "success", "data"],
+            properties: {
+              index: { type: "integer", minimum: 0 }, success: { type: "boolean", enum: [true] }, clientRequestId: { type: "string" },
+              data: { $ref: "#/components/schemas/ExternalDeclarationNameConvertResult" },
+            },
+          },
+          {
+            type: "object", additionalProperties: false, required: ["index", "success", "name", "nameEng", "error"],
+            properties: {
+              index: { type: "integer", minimum: 0 }, success: { type: "boolean", enum: [false] },
+              name: { type: "string" }, nameEng: { type: "string" }, clientRequestId: { type: "string" }, error: { type: "string" },
+            },
+          },
+        ],
+      },
+      ExternalDeclarationNameBatchConvertResult: {
+        type: "object", required: ["totalCount", "successCount", "failedCount", "items"],
+        properties: {
+          totalCount: { type: "integer", minimum: 0 }, successCount: { type: "integer", minimum: 0 }, failedCount: { type: "integer", minimum: 0 },
+          items: { type: "array", items: { $ref: "#/components/schemas/ExternalDeclarationNameBatchItemResult" } },
+        },
+      },
       ExternalDeclarationNameConvertResponse: {
         type: "object", required: ["success", "message", "data"],
         properties: { success: { type: "boolean", example: true }, message: { type: "string", example: "报关品名转换完成" }, data: { $ref: "#/components/schemas/ExternalDeclarationNameConvertResult" } },
+      },
+      ExternalDeclarationNameBatchConvertResponse: {
+        type: "object", required: ["success", "message", "data"],
+        properties: { success: { type: "boolean", example: true }, message: { type: "string", example: "批量报关品名转换完成" }, data: { $ref: "#/components/schemas/ExternalDeclarationNameBatchConvertResult" } },
       },
       ErrorResponse: {
         type: "object", required: ["success", "message", "data"],

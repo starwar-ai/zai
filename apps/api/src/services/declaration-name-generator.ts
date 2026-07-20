@@ -22,7 +22,7 @@ export const declarationNameJsonSchema = {
 }
 
 export const declarationNameSystemPrompt = `你是跨境电商和外贸报关品名标准化助手。根据中文销售名、英文销售名和历史候选输出统一的中英文报关品名。
-规则：输出品类名而非完整销售标题；删除尺寸、容量、电压、功率、颜色、包装数量、营销词、型号、FSC 和规格参数；保留核心品类、用途和必要材质；零件和耗材需要带主机品类；英文全大写且尽量为 2-5 个词；输入冲突、历史候选冲突或疑似公司与品牌名时要求人工复核；不输出 HS Code 或解释性长句。`
+规则：输出品类名而非完整销售标题；删除尺寸、容量、电压、功率、颜色、包装数量、营销词、型号、FSC、用途 和规格参数；保留核心品类和必要材质；中文尽量7个字以内；英文全大写且尽量为 2-5 个词；输入冲突、历史候选冲突或疑似公司与品牌名时要求人工复核；不输出 HS Code 或解释性长句。`
 
 function numberFromEnv(name: string, fallback: number): number {
   const value = Number(process.env[name])

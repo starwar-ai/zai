@@ -139,6 +139,7 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | POST | `/api/declaration-names/mappings/:id/reject` | 驳回映射并记录原因 |
 | POST | `/api/declaration-names/writeback` | 将已审核映射显式回写到已登记来源项 |
 | POST | `/api/external/declaration-names/convert` | 使用 API Key 同步转换中英文商品名 |
+| POST | `/api/external/declaration-names/convert/batch` | 使用 API Key 批量转换中英文商品名，逐项返回结果 |
 | GET | `/api-docs` | Swagger 外部接口调试页 |
 | GET | `/api/openapi.json` | OpenAPI 3.0 接口定义 |
 
@@ -153,6 +154,8 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 ```
 
 外部报关品名接口使用 `X-API-Key`（也支持 `Authorization: Bearer <key>`）鉴权。开发环境在 `apps/api/.env` 配置 `EXTERNAL_API_KEYS` 后，可打开 `http://localhost:3100/api-docs`，点击 **Authorize** 输入密钥并直接调试。多个调用方密钥以英文逗号分隔。接口优先复用已审核映射，未命中时同步调用模型；`qualified=false` 或 `reviewRequired=true` 的结果必须进入人工复核，不能直接用于正式申报。
+
+批量转换接口请求体为 `{ "items": [...] }`，单次最多 100 条，返回顺序与输入顺序一致。每个结果通过 `success` 区分成功数据与失败原因；单项失败不会中断其他项。
 
 ## 添加新的单据类型
 

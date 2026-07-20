@@ -418,6 +418,21 @@ export interface ExternalDeclarationNameConvertResult {
   modelVersion?: string
 }
 
+export interface ExternalDeclarationNameBatchConvertRequest {
+  items: ExternalDeclarationNameConvertRequest[]
+}
+
+export type ExternalDeclarationNameBatchItemResult =
+  | { index: number; success: true; clientRequestId?: string; data: ExternalDeclarationNameConvertResult }
+  | { index: number; success: false; name: string; nameEng: string; clientRequestId?: string; error: string }
+
+export interface ExternalDeclarationNameBatchConvertResult {
+  totalCount: number
+  successCount: number
+  failedCount: number
+  items: ExternalDeclarationNameBatchItemResult[]
+}
+
 export interface GeneratedDeclarationName {
   declarationName: string
   customsDeclarationNameEng: string

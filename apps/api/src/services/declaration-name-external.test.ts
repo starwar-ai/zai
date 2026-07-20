@@ -12,7 +12,7 @@ const { database, generate } = vi.hoisted(() => ({
 vi.mock("../database.js", () => ({ prisma: database }))
 vi.mock("./declaration-name-generator.js", () => ({ generateDeclarationName: generate, sanitizeProviderError: (message: string) => message }))
 
-import { convertExternalDeclarationName } from "./declaration-name-service.js"
+import { convertExternalDeclarationName, convertExternalDeclarationNamesBatch } from "./declaration-name-service.js"
 
 describe("外部报关品名转换", () => {
   beforeEach(() => vi.clearAllMocks())
@@ -48,5 +48,28 @@ describe("外部报关品名转换", () => {
     expect(result).toMatchObject({ qualified: false, reviewRequired: true, source: "MODEL" })
     expect(result.reviewReason).toContain("命中强制复核品类关键词")
     expect(client.declarationNameAuditLog.create).toHaveBeenCalledOnce()
+  })
+
+  it("批量转换保持输入顺序并逐项返回失败", async () => {
+    database.declarationNameMapping.findUnique.mockImplementation(async (input: { where: { normalizedName_normalizedNameEng: { normalizedName: string } } }) => {
+      const normalizedName = input.where.normalizedName_normalizedNameEng.normalizedName
+      if (normalizedName !== "塑料工具箱") return null
+      return {
+        id: "mapping-1", normalizedName, normalizedNameEng: "plastic tool box",
+        rawName: "塑料工具箱", rawNameEng: "Plastic Tool Box", declarationName: "塑料工具箱",
+        customsDeclarationNameEng: "PLASTIC TOOL BOX", confidence: 0.96, reviewRequired: false,
+        reviewReason: "", status: "APPROVED", modelVersion: "openai:model", updatedAt: new Date(),
+      }
+    })
+    generate.mockRejectedValue(new Error("模型暂时不可用"))
+
+    const result = await convertExternalDeclarationNamesBatch({ items: [
+      { name: "塑料工具箱", nameEng: "Plastic Tool Box", clientRequestId: "REQ-1" },
+      { name: "未知商品", nameEng: "Unknown Product", clientRequestId: "REQ-2" },
+    ] }, "external:test")
+
+    expect(result).toMatchObject({ totalCount: 2, successCount: 1, failedCount: 1 })
+    expect(result.items[0]).toMatchObject({ index: 0, success: true, clientRequestId: "REQ-1" })
+    expect(result.items[1]).toMatchObject({ index: 1, success: false, clientRequestId: "REQ-2", error: "模型暂时不可用" })
   })
 })

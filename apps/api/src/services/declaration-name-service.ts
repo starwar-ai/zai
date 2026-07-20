@@ -1,10 +1,11 @@
 import { Prisma, type DeclarationNameMapping } from "@prisma/client"
-import { evaluateDeclarationNameReview, normalizeDeclarationName, type DeclarationNameApproveRequest, type DeclarationNameInput, type DeclarationNameJob, type DeclarationNameMapping as DeclarationNameMappingDto, type DeclarationNameRejectRequest, type DeclarationNameResolveRequest, type DeclarationNameResolveResult, type DeclarationNameWritebackRequest, type DeclarationNameWritebackResult, type ExternalDeclarationNameConvertRequest, type ExternalDeclarationNameConvertResult, type ListResponse } from "@zform/shared"
+import { evaluateDeclarationNameReview, normalizeDeclarationName, type DeclarationNameApproveRequest, type DeclarationNameInput, type DeclarationNameJob, type DeclarationNameMapping as DeclarationNameMappingDto, type DeclarationNameRejectRequest, type DeclarationNameResolveRequest, type DeclarationNameResolveResult, type DeclarationNameWritebackRequest, type DeclarationNameWritebackResult, type ExternalDeclarationNameBatchConvertRequest, type ExternalDeclarationNameBatchConvertResult, type ExternalDeclarationNameBatchItemResult, type ExternalDeclarationNameConvertRequest, type ExternalDeclarationNameConvertResult, type ListResponse } from "@zform/shared"
 import { prisma } from "../database.js"
 import { BusinessError } from "../utils/business-error.js"
 import { generateDeclarationName, sanitizeProviderError } from "./declaration-name-generator.js"
 
 const maxBatchResolve = Number(process.env.MAX_BATCH_RESOLVE || 100)
+const externalBatchConcurrency = 3
 const autoApproveConfidence = Number(process.env.AUTO_APPROVE_CONFIDENCE || 0.9)
 const promptVersion = process.env.PROMPT_VERSION || "v1"
 
@@ -125,6 +126,36 @@ export async function convertExternalDeclarationName(request: ExternalDeclaratio
     confidence: generated.confidence, qualified: !decision.reviewRequired, reviewRequired: decision.reviewRequired,
     reviewReason: decision.reviewReason, source: "MODEL", modelVersion,
   }
+}
+
+export async function convertExternalDeclarationNamesBatch(request: ExternalDeclarationNameBatchConvertRequest, actor: string): Promise<ExternalDeclarationNameBatchConvertResult> {
+  if (!request.items.length) throw new BusinessError("items 不能为空。")
+  if (request.items.length > maxBatchResolve) throw new BusinessError(`单次最多处理 ${maxBatchResolve} 条。`)
+
+  const results = new Array<ExternalDeclarationNameBatchItemResult>(request.items.length)
+  let nextIndex = 0
+  async function worker(): Promise<void> {
+    while (nextIndex < request.items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      const item = request.items[index]
+      if (!item) continue
+      try {
+        const data = await convertExternalDeclarationName(item, actor)
+        results[index] = { index, success: true, ...(item.clientRequestId ? { clientRequestId: item.clientRequestId } : {}), data }
+      } catch (error) {
+        const message = sanitizeProviderError(error instanceof Error ? error.message : String(error))
+        results[index] = {
+          index, success: false, name: item.name, nameEng: item.nameEng,
+          ...(item.clientRequestId ? { clientRequestId: item.clientRequestId } : {}), error: message,
+        }
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(externalBatchConcurrency, request.items.length) }, () => worker()))
+  const successCount = results.filter((item) => item.success).length
+  return { totalCount: results.length, successCount, failedCount: results.length - successCount, items: results }
 }
 
 export async function listDeclarationNameReviews(input: { keyword?: string; page: number; pageSize: number }): Promise<ListResponse<DeclarationNameMappingDto>> {

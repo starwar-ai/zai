@@ -1,6 +1,6 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
-import { approveDeclarationName, convertExternalDeclarationName, generateDeclarationNames, getDeclarationNameJob, listDeclarationNameReviews, rejectDeclarationName, resolveDeclarationNames, writebackDeclarationNames } from "../services/declaration-name-service.js"
+import { approveDeclarationName, convertExternalDeclarationName, convertExternalDeclarationNamesBatch, generateDeclarationNames, getDeclarationNameJob, listDeclarationNameReviews, rejectDeclarationName, resolveDeclarationNames, writebackDeclarationNames } from "../services/declaration-name-service.js"
 import { assertSystemPermission } from "../services/system-management-service.js"
 import { ok, routeParam } from "../utils/http.js"
 import { shellIdentity } from "../utils/request-context.js"
@@ -19,6 +19,12 @@ const externalConvertSchema = z.object({
 export async function postExternalDeclarationNameConvert(request: Request, response: Response): Promise<void> {
   const actor = typeof response.locals.externalClientId === "string" ? response.locals.externalClientId : "external:unknown"
   ok(response, await convertExternalDeclarationName(externalConvertSchema.parse(request.body), actor), "报关品名转换完成")
+}
+
+export async function postExternalDeclarationNameBatchConvert(request: Request, response: Response): Promise<void> {
+  const actor = typeof response.locals.externalClientId === "string" ? response.locals.externalClientId : "external:unknown"
+  const body = z.object({ items: z.array(externalConvertSchema).min(1).max(100) }).strict().parse(request.body)
+  ok(response, await convertExternalDeclarationNamesBatch(body, actor), "批量报关品名转换完成")
 }
 
 export async function postDeclarationNameResolve(request: Request, response: Response): Promise<void> {
