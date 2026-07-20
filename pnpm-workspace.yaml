@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+linkWorkspacePackages: true
+
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - "@scarf/scarf"
+  - esbuild
+  - prisma
