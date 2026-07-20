@@ -1,6 +1,6 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
-import { approveDeclarationName, generateDeclarationNames, getDeclarationNameJob, listDeclarationNameReviews, rejectDeclarationName, resolveDeclarationNames, writebackDeclarationNames } from "../services/declaration-name-service.js"
+import { approveDeclarationName, convertExternalDeclarationName, generateDeclarationNames, getDeclarationNameJob, listDeclarationNameReviews, rejectDeclarationName, resolveDeclarationNames, writebackDeclarationNames } from "../services/declaration-name-service.js"
 import { assertSystemPermission } from "../services/system-management-service.js"
 import { ok, routeParam } from "../utils/http.js"
 import { shellIdentity } from "../utils/request-context.js"
@@ -10,6 +10,16 @@ const resolveSchema = z.object({ items: z.array(itemSchema).min(1).max(100), cre
 const approveSchema = z.object({ declarationName: z.string().trim().min(1).max(100).optional(), customsDeclarationNameEng: z.string().trim().min(1).max(100).optional() })
 const rejectSchema = z.object({ reason: z.string().trim().min(1).max(500) })
 const writebackSchema = z.object({ mappingIds: z.array(z.string().uuid()).max(1000).optional(), shipmentItemIds: z.array(z.string().trim().min(1).max(100)).max(1000).optional(), includeDeclarationItems: z.boolean().optional() })
+const externalConvertSchema = z.object({
+  name: z.string().trim().min(1, "中文商品名不能为空").max(255),
+  nameEng: z.string().trim().min(1, "英文商品名不能为空").max(255),
+  clientRequestId: z.string().trim().min(1).max(100).optional(),
+}).strict()
+
+export async function postExternalDeclarationNameConvert(request: Request, response: Response): Promise<void> {
+  const actor = typeof response.locals.externalClientId === "string" ? response.locals.externalClientId : "external:unknown"
+  ok(response, await convertExternalDeclarationName(externalConvertSchema.parse(request.body), actor), "报关品名转换完成")
+}
 
 export async function postDeclarationNameResolve(request: Request, response: Response): Promise<void> {
   const identity = shellIdentity(request)

@@ -399,6 +399,25 @@ export interface DeclarationNameJob {
 export interface DeclarationNameWritebackRequest { mappingIds?: string[]; shipmentItemIds?: string[]; includeDeclarationItems?: boolean }
 export interface DeclarationNameWritebackResult { shipmentItemsAffected: number; declarationItemsAffected: number }
 
+export interface ExternalDeclarationNameConvertRequest {
+  name: string
+  nameEng: string
+  clientRequestId?: string
+}
+
+export interface ExternalDeclarationNameConvertResult {
+  name: string
+  nameEng: string
+  declarationName: string
+  customsDeclarationNameEng: string
+  confidence: number
+  qualified: boolean
+  reviewRequired: boolean
+  reviewReason: string
+  source: "CACHE" | "MODEL"
+  modelVersion?: string
+}
+
 export interface GeneratedDeclarationName {
   declarationName: string
   customsDeclarationNameEng: string

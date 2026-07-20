@@ -1,5 +1,5 @@
 import { Prisma, type DeclarationNameMapping } from "@prisma/client"
-import { evaluateDeclarationNameReview, normalizeDeclarationName, type DeclarationNameApproveRequest, type DeclarationNameInput, type DeclarationNameJob, type DeclarationNameMapping as DeclarationNameMappingDto, type DeclarationNameRejectRequest, type DeclarationNameResolveRequest, type DeclarationNameResolveResult, type DeclarationNameWritebackRequest, type DeclarationNameWritebackResult, type ListResponse } from "@zform/shared"
+import { evaluateDeclarationNameReview, normalizeDeclarationName, type DeclarationNameApproveRequest, type DeclarationNameInput, type DeclarationNameJob, type DeclarationNameMapping as DeclarationNameMappingDto, type DeclarationNameRejectRequest, type DeclarationNameResolveRequest, type DeclarationNameResolveResult, type DeclarationNameWritebackRequest, type DeclarationNameWritebackResult, type ExternalDeclarationNameConvertRequest, type ExternalDeclarationNameConvertResult, type ListResponse } from "@zform/shared"
 import { prisma } from "../database.js"
 import { BusinessError } from "../utils/business-error.js"
 import { generateDeclarationName, sanitizeProviderError } from "./declaration-name-generator.js"
@@ -69,6 +69,62 @@ export async function generateDeclarationNames(items: DeclarationNameInput[], us
   assertItems(items)
   const mappings = await Promise.all(items.map(ensureMapping))
   return { jobId: await createJob(mappings.map((item) => item.id), userId), inputCount: mappings.length }
+}
+
+export async function convertExternalDeclarationName(request: ExternalDeclarationNameConvertRequest, actor: string): Promise<ExternalDeclarationNameConvertResult> {
+  const name = request.name.trim()
+  const nameEng = request.nameEng.trim()
+  const normalizedName = normalizeDeclarationName(name)
+  const normalizedNameEng = normalizeDeclarationName(nameEng)
+  const current = await prisma.declarationNameMapping.findUnique({
+    where: { normalizedName_normalizedNameEng: { normalizedName, normalizedNameEng } },
+  })
+  if (current?.declarationName && current.customsDeclarationNameEng && (current.status === "APPROVED" || current.status === "REVIEW_REQUIRED")) {
+    return {
+      name, nameEng, declarationName: current.declarationName, customsDeclarationNameEng: current.customsDeclarationNameEng,
+      confidence: current.confidence === null ? 0 : Number(current.confidence), qualified: current.status === "APPROVED",
+      reviewRequired: current.reviewRequired, reviewReason: current.reviewReason || "", source: "CACHE",
+      ...(current.modelVersion ? { modelVersion: current.modelVersion } : {}),
+    }
+  }
+
+  const generated = await generateDeclarationName({
+    name, nameEng,
+    ...(current?.existingDeclarationVariants ? { existingDeclarationVariants: current.existingDeclarationVariants } : {}),
+    ...(current?.existingEngVariants ? { existingEngVariants: current.existingEngVariants } : {}),
+    ...(current ? { rowCount: current.rowCount } : {}),
+  })
+  const decision = evaluateDeclarationNameReview({ name, nameEng, generated, autoApproveConfidence })
+  const modelVersion = `${generated.provider || "unknown"}:${generated.model || "unknown"}`
+  await prisma.$transaction(async (client) => {
+    const mapping = await client.declarationNameMapping.upsert({
+      where: { normalizedName_normalizedNameEng: { normalizedName, normalizedNameEng } },
+      update: {
+        rawName: name, rawNameEng: nameEng, declarationName: generated.declarationName,
+        customsDeclarationNameEng: generated.customsDeclarationNameEng, confidence: generated.confidence,
+        reviewRequired: decision.reviewRequired, reviewReason: decision.reviewReason, status: decision.status,
+        promptVersion, modelVersion, errorMessage: null,
+      },
+      create: {
+        normalizedName, normalizedNameEng, rawName: name, rawNameEng: nameEng,
+        declarationName: generated.declarationName, customsDeclarationNameEng: generated.customsDeclarationNameEng,
+        confidence: generated.confidence, reviewRequired: decision.reviewRequired, reviewReason: decision.reviewReason,
+        status: decision.status, source: "external-api", promptVersion, modelVersion,
+      },
+    })
+    await client.declarationNameAuditLog.create({
+      data: {
+        mappingId: mapping.id, action: "EXTERNAL_CONVERT", actor,
+        ...(current ? { beforeJson: json(toMapping(current)) } : {}), afterJson: json({ ...generated, ...decision }),
+        ...(request.clientRequestId ? { note: `clientRequestId=${request.clientRequestId}` } : {}),
+      },
+    })
+  })
+  return {
+    name, nameEng, declarationName: generated.declarationName, customsDeclarationNameEng: generated.customsDeclarationNameEng,
+    confidence: generated.confidence, qualified: !decision.reviewRequired, reviewRequired: decision.reviewRequired,
+    reviewReason: decision.reviewReason, source: "MODEL", modelVersion,
+  }
 }
 
 export async function listDeclarationNameReviews(input: { keyword?: string; page: number; pageSize: number }): Promise<ListResponse<DeclarationNameMappingDto>> {
