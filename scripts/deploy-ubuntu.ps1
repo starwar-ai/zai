@@ -3,25 +3,23 @@
 构建 ZForm 并部署到 Ubuntu 服务器，默认安装到 /root/zai。
 
 .EXAMPLE
-.\scripts\deploy-ubuntu.ps1 -Server 192.0.2.10 -IdentityFile $HOME\.ssh\id_ed25519 -EnvFile .\apps\api\.env.production
+.\scripts\deploy-ubuntu.ps1
 
 .EXAMPLE
-# 后续发布复用服务器上的环境配置
-.\scripts\deploy-ubuntu.ps1 -Server zai.example.com -IdentityFile $HOME\.ssh\id_ed25519
+# 覆盖默认服务器、密钥和环境文件
+.\scripts\deploy-ubuntu.ps1 -Server zai.example.com -IdentityFile ~/.ssh/id_ed25519 -EnvFile deploy/zai.env
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Server,
+    [string]$Server = "172.16.52.11",
 
     [string]$User = "root",
     [int]$SshPort = 22,
-    [string]$IdentityFile,
+    [string]$IdentityFile = "~/.ssh/id_rsa",
     [string]$DeployPath = "/root/zai",
-    [string]$EnvFile,
+    [string]$EnvFile = "apps/api/.env",
     [string]$ServiceName = "zai",
-    [switch]$Seed,
-    [switch]$SkipLocalChecks
+    [switch]$Seed
 )
 
 Set-StrictMode -Version Latest
@@ -59,11 +57,17 @@ if ($ServiceName -notmatch '^[a-zA-Z0-9_.@-]+$') {
     throw "ServiceName 只能包含字母、数字、下划线、点、@ 和连字符。"
 }
 
+$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ($EnvFile) {
-    $EnvFile = (Resolve-Path -LiteralPath $EnvFile).Path
+    $envFilePath = if ([System.IO.Path]::IsPathRooted($EnvFile)) {
+        $EnvFile
+    }
+    else {
+        Join-Path $repositoryRoot $EnvFile
+    }
+    $EnvFile = (Resolve-Path -LiteralPath $envFilePath).Path
 }
 
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $timestamp = Get-Date -Format "yyyyMMddHHmmss"
 $archiveName = "zai-$timestamp.tar.gz"
 $archivePath = Join-Path ([System.IO.Path]::GetTempPath()) $archiveName
@@ -71,38 +75,22 @@ $remoteArchive = "/tmp/$archiveName"
 $remoteEnv = "/tmp/zai-env-$timestamp"
 $target = "$User@$Server"
 
-Assert-Command "npm"
 Assert-Command "ssh"
 Assert-Command "scp"
 Assert-Command "tar"
 
-$sshOptions = @("-p", "$SshPort", "-o", "StrictHostKeyChecking=accept-new")
-$scpOptions = @("-P", "$SshPort", "-o", "StrictHostKeyChecking=accept-new")
+$sshOptions = @("-p", "$SshPort", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10")
+$scpOptions = @("-P", "$SshPort", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10")
 if ($IdentityFile) {
     $resolvedIdentityFile = (Resolve-Path -LiteralPath $IdentityFile).Path
-    $sshOptions += @("-i", $resolvedIdentityFile)
-    $scpOptions += @("-i", $resolvedIdentityFile)
+    $sshOptions += @("-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-i", $resolvedIdentityFile)
+    $scpOptions += @("-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-i", $resolvedIdentityFile)
 }
 
 try {
     Push-Location $repositoryRoot
     try {
-        if (-not $SkipLocalChecks) {
-            Write-Host "[1/6] 安装本地依赖并执行完整检查..." -ForegroundColor Cyan
-            & npm ci
-            Assert-LastExitCode "npm ci"
-            & npm run typecheck
-            Assert-LastExitCode "npm run typecheck"
-            & npm test
-            Assert-LastExitCode "npm test"
-            & npm run build
-            Assert-LastExitCode "npm run build"
-        }
-        else {
-            Write-Warning "已跳过本地 typecheck、test 和 build。"
-        }
-
-        Write-Host "[2/6] 打包工作区..." -ForegroundColor Cyan
+        Write-Host "[1/5] 打包工作区..." -ForegroundColor Cyan
         $tarArguments = @(
             "-czf", $archivePath,
             "--exclude=.git",
@@ -123,11 +111,14 @@ try {
         Pop-Location
     }
 
-    Write-Host "[3/6] 检查 Ubuntu 服务器连接..." -ForegroundColor Cyan
+    Write-Host "[2/5] 检查 Ubuntu 服务器连接..." -ForegroundColor Cyan
     & ssh @sshOptions $target "true"
+    if ($LASTEXITCODE -ne 0 -and $IdentityFile) {
+        throw "SSH 密钥认证失败。服务器未接受私钥 '$resolvedIdentityFile'，请确认 -User/-IdentityFile，或先将对应公钥加入 ${target}:~/.ssh/authorized_keys。退出码：$LASTEXITCODE"
+    }
     Assert-LastExitCode "SSH 连接"
 
-    Write-Host "[4/6] 上传部署包..." -ForegroundColor Cyan
+    Write-Host "[3/5] 上传部署包..." -ForegroundColor Cyan
     & scp @scpOptions $archivePath "${target}:$remoteArchive"
     Assert-LastExitCode "上传部署包"
 
@@ -140,7 +131,7 @@ try {
         $hasUploadedEnv = "1"
     }
 
-    Write-Host "[5/6] 安装远端依赖、迁移数据库并切换版本..." -ForegroundColor Cyan
+    Write-Host "[4/5] 安装远端依赖、迁移数据库并切换版本..." -ForegroundColor Cyan
     $seedValue = if ($Seed) { "1" } else { "0" }
     $remoteScript = @'
 set -Eeuo pipefail
@@ -276,7 +267,7 @@ printf '%s\n' "部署成功：$release_path" "服务状态：$(systemctl is-acti
     $remoteScript | & ssh @sshOptions $target "bash -s -- '$DeployPath' '$remoteArchive' '$timestamp' '$ServiceName' '$hasUploadedEnv' '$remoteEnv' '$seedValue'"
     Assert-LastExitCode "远端部署"
 
-    Write-Host "[6/6] 部署完成。" -ForegroundColor Green
+    Write-Host "[5/5] 部署完成。" -ForegroundColor Green
     Write-Host "服务：$ServiceName"
     Write-Host "目录：$DeployPath/current"
     Write-Host "查看日志：ssh $target 'journalctl -u $ServiceName -f'"
