@@ -35,6 +35,8 @@ const documents: SeedDocument[] = [
 ]
 
 async function main(): Promise<void> {
+  const headquarters = await prisma.department.upsert({ where: { code: "HEADQUARTERS" }, update: { name: "总部" }, create: { code: "HEADQUARTERS", name: "总部", order: 0 } })
+  await prisma.department.upsert({ where: { code: "DEMO" }, update: { name: "演示部门", parentId: headquarters.id }, create: { id: "demo-department", code: "DEMO", name: "演示部门", parentId: headquarters.id, order: 10 } })
   for (const item of documents) {
     await prisma.document.upsert({
       where: { code: item.code },
@@ -61,7 +63,7 @@ async function main(): Promise<void> {
   })
   await prisma.userPreference.upsert({
     where: { userId: "framework-user" }, update: {},
-    create: { userId: "framework-user", settings: { theme: "light", compactMode: false, sidebarCollapsed: false, dashboardWidgetIds: ["metrics", "recent-documents", "business-distribution", "business-flow", "recent-activities"], showGlobalStatusBar: true } },
+    create: { userId: "framework-user", settings: { theme: "light", compactMode: false, sidebarCollapsed: false, dashboardWidgetIds: ["metrics", "customer-research-queue", "recent-documents", "business-distribution", "business-flow", "recent-activities"], showGlobalStatusBar: true } },
   })
   const notificationCount = await prisma.userNotification.count({ where: { userId: "framework-user" } })
   if (!notificationCount) await prisma.userNotification.createMany({ data: [
@@ -74,17 +76,22 @@ async function main(): Promise<void> {
     { id: "document:sales_contract", groupId: "documents", groupLabel: "业务单据", label: "销售合同", icon: "PackageOpen", target: "document-list", targetId: "sales_contract", permissionCode: "document:sales_contract:view", order: 30 },
     { id: "document:purchase_plan", groupId: "documents", groupLabel: "业务单据", label: "采购计划", icon: "ShoppingCart", target: "document-list", targetId: "purchase_plan", permissionCode: "document:purchase_plan:view", order: 40 },
     { id: "document:warehouse_inbound", groupId: "documents", groupLabel: "业务单据", label: "入库单", icon: "Warehouse", target: "document-list", targetId: "warehouse_inbound", permissionCode: "document:warehouse_inbound:view", order: 50 },
+    { id: "document:customer_due_diligence", groupId: "documents", groupLabel: "业务单据", label: "客户背景调查", icon: "SearchCheck", target: "document-list", targetId: "customer_due_diligence", permissionCode: "document:customer_due_diligence:view", order: 55 },
     { id: "declaration-name", groupId: "tools", groupLabel: "智能工具", label: "报关名称审核", icon: "Languages", target: "declaration-name", permissionCode: "declaration-name:view", order: 60 },
+    { id: "ocr:recognition", groupId: "tools", groupLabel: "智能工具", label: "支付截图识别", icon: "ScanLine", target: "ocr-recognition", permissionCode: "ocr:view", order: 65 },
     { id: "system:menus", groupId: "system", groupLabel: "系统管理", label: "菜单管理", icon: "MenuSquare", target: "menu-management", permissionCode: "system:menu:manage", order: 70 },
-    { id: "system:users", groupId: "system", groupLabel: "系统管理", label: "用户管理", icon: "Users", target: "user-management", permissionCode: "system:user:manage", order: 80 },
-    { id: "system:roles", groupId: "system", groupLabel: "系统管理", label: "角色管理", icon: "ShieldCheck", target: "role-management", permissionCode: "system:role:manage", order: 90 },
-    { id: "settings", groupId: "system", groupLabel: "系统管理", label: "用户设置", icon: "Settings", target: "settings", permissionCode: "settings:use", order: 100 },
-    { id: "help", groupId: "system", groupLabel: "系统管理", label: "使用帮助", icon: "CircleHelp", target: "help", order: 110 },
+    { id: "system:departments", groupId: "system", groupLabel: "系统管理", label: "部门管理", icon: "Building2", target: "department-management", permissionCode: "system:department:manage", order: 80 },
+    { id: "system:users", groupId: "system", groupLabel: "系统管理", label: "用户管理", icon: "Users", target: "user-management", permissionCode: "system:user:manage", order: 90 },
+    { id: "system:roles", groupId: "system", groupLabel: "系统管理", label: "角色管理", icon: "ShieldCheck", target: "role-management", permissionCode: "system:role:manage", order: 100 },
+    { id: "settings", groupId: "system", groupLabel: "系统管理", label: "用户设置", icon: "Settings", target: "settings", permissionCode: "settings:use", order: 110 },
+    { id: "help", groupId: "system", groupLabel: "系统管理", label: "使用帮助", icon: "CircleHelp", target: "help", order: 120 },
   ]
   for (const menu of menus) await prisma.systemMenu.upsert({ where: { id: menu.id }, update: menu, create: menu })
   const adminRole = await prisma.role.upsert({ where: { code: "SYSTEM_ADMIN" }, update: { name: "系统管理员", permissions: ["*"] }, create: { code: "SYSTEM_ADMIN", name: "系统管理员", description: "拥有 framework 全部管理和业务权限", permissions: ["*"] } })
   await prisma.role.upsert({ where: { code: "BUSINESS_VIEWER" }, update: {}, create: { code: "BUSINESS_VIEWER", name: "业务查看员", description: "可查看工作台与业务单据", permissions: ["dashboard:view", "document:quotation:view", "document:sales_contract:view", "document:purchase_plan:view", "document:warehouse_inbound:view", "settings:use"] } })
   await prisma.role.upsert({ where: { code: "DECLARATION_REVIEWER" }, update: { permissions: ["dashboard:view", "declaration-name:view", "declaration-name:generate", "declaration-name:review", "declaration-name:writeback"] }, create: { code: "DECLARATION_REVIEWER", name: "报关名称审核员", description: "可生成、复核和显式回写报关名称", permissions: ["dashboard:view", "declaration-name:view", "declaration-name:generate", "declaration-name:review", "declaration-name:writeback"] } })
+  await prisma.role.upsert({ where: { code: "CUSTOMER_RESEARCHER" }, update: { permissions: ["dashboard:view", "document:customer_due_diligence:view", "document:customer_due_diligence:create", "document:customer_due_diligence:update", "customer-research:run", "customer-research:retry", "customer-research:export", "settings:use"] }, create: { code: "CUSTOMER_RESEARCHER", name: "客户调查员", description: "可导入客户、执行联网调查并查看调查报告", permissions: ["dashboard:view", "document:customer_due_diligence:view", "document:customer_due_diligence:create", "document:customer_due_diligence:update", "customer-research:run", "customer-research:retry", "customer-research:export", "settings:use"] } })
+  await prisma.role.upsert({ where: { code: "OCR_OPERATOR" }, update: { permissions: ["dashboard:view", "ocr:view", "ocr:recognize", "ocr:delete", "ocr:export"] }, create: { code: "OCR_OPERATOR", name: "支付截图识别员", description: "可上传支付截图、查看个人识别记录并导出结果", permissions: ["dashboard:view", "ocr:view", "ocr:recognize", "ocr:delete", "ocr:export"] } })
   await prisma.appUser.upsert({ where: { id: "framework-user" }, update: { name: "林默", status: "ACTIVE" }, create: { id: "framework-user", name: "林默", email: "linmo@example.local", departmentId: "demo-department", departmentName: "演示部门", status: "ACTIVE" } })
   await prisma.userRole.upsert({ where: { userId_roleId: { userId: "framework-user", roleId: adminRole.id } }, update: {}, create: { userId: "framework-user", roleId: adminRole.id } })
   await prisma.declarationNameMapping.upsert({

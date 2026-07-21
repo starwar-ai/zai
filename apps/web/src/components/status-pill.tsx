@@ -1,8 +1,8 @@
 import { STATUS_LABELS, type DocumentStatus } from "@zform/shared"
 
 
-export function StatusPill({ status }: { status: DocumentStatus }) {
-  return <span className={`status-pill status-${status.toLowerCase()}`}><i />{STATUS_LABELS[status]}</span>
+export function StatusPill({ status, label }: { status: DocumentStatus; label?: string }) {
+  return <span className={`status-pill status-${status.toLowerCase()}`}><i />{label || STATUS_LABELS[status]}</span>
 }
 
 export function formatDate(value: string, includeTime = false): string {

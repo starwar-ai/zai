@@ -1,77 +1,40 @@
 import { useCallback, useEffect, useState } from "react"
-import { Edit3, MenuSquare, Plus, ShieldCheck, Trash2, Users } from "lucide-react"
-import type { RoleRecord, SystemManagementData, SystemMenuRecord, UserRecord, UserStatus } from "@zform/shared"
+import { Building2, MenuSquare, RefreshCw, ShieldCheck, Users } from "lucide-react"
+import type { SystemManagementData } from "@zform/shared"
 import { api } from "@/apis/framework-api"
-import { Alert, Badge, Button, Card, Checkbox, ConfirmDialog, Dialog, EmptyState, FormField, IconButton, Input, PageHeader, Select, Spinner, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "@/components/ui"
+import { DepartmentManagement } from "@/components/system-management/department-management"
+import { MenuManagement } from "@/components/system-management/menu-management"
+import { RoleManagement } from "@/components/system-management/role-management"
+import { UserManagement } from "@/components/system-management/user-management"
+import { Alert, Button, Card, PageHeader, Spinner } from "@/components/ui"
 
-type Entity = "menus" | "users" | "roles"
+type Entity = "menus" | "users" | "roles" | "departments"
 interface SystemManagementProps { entity: Entity; onShellChanged: () => Promise<void> }
 
-const EMPTY_DATA: SystemManagementData = { menus: [], roles: [], users: [] }
+const EMPTY_DATA: SystemManagementData = { menus: [], roles: [], users: [], departments: [] }
 const entityMeta = {
-  menus: { title: "菜单管理", description: "配置应用外壳菜单、跳转目标和所需权限。", create: "新建菜单", icon: MenuSquare },
-  users: { title: "用户管理", description: "管理登录主体、部门、状态和角色分配。", create: "新建用户", icon: Users },
-  roles: { title: "角色管理", description: "通过稳定权限码组合系统与业务访问能力。", create: "新建角色", icon: ShieldCheck },
+  menus: { title: "菜单管理", description: "配置应用导航、访问目标、权限码和显示顺序。", icon: MenuSquare },
+  users: { title: "用户管理", description: "管理登录主体、所属部门、启停状态和角色分配。", icon: Users },
+  roles: { title: "角色管理", description: "按角色组合系统权限和业务单据操作权限。", icon: ShieldCheck },
+  departments: { title: "部门管理", description: "维护组织层级，用户和数据权限统一引用部门标识。", icon: Building2 },
 }
-
-interface MenuDraft { id: string; groupId: string; groupLabel: string; label: string; icon: string; target: SystemMenuRecord["target"]; targetId: string; permissionCode: string; order: number; enabled: boolean }
-interface RoleDraft { id?: string; code: string; name: string; description: string; permissions: string }
-interface UserDraft { id: string; editing: boolean; name: string; email: string; departmentId: string; departmentName: string; status: UserStatus; roleIds: string[] }
-
-const emptyMenu = (): MenuDraft => ({ id: "", groupId: "system", groupLabel: "系统管理", label: "", icon: "FileText", target: "help", targetId: "", permissionCode: "", order: 100, enabled: true })
-const emptyRole = (): RoleDraft => ({ code: "", name: "", description: "", permissions: "" })
-const emptyUser = (): UserDraft => ({ id: "", editing: false, name: "", email: "", departmentId: "", departmentName: "", status: "ACTIVE", roleIds: [] })
 
 export function SystemManagement({ entity, onShellChanged }: SystemManagementProps) {
   const [data, setData] = useState<SystemManagementData>(EMPTY_DATA)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [menuDraft, setMenuDraft] = useState<MenuDraft | null>(null)
-  const [roleDraft, setRoleDraft] = useState<RoleDraft | null>(null)
-  const [userDraft, setUserDraft] = useState<UserDraft | null>(null)
-  const [confirm, setConfirm] = useState<{ entity: Entity; id: string; label: string } | null>(null)
   const meta = entityMeta[entity]
   const load = useCallback(async () => { setLoading(true); setError(null); try { setData(await api.systemManagement()) } catch (reason) { setError(reason instanceof Error ? reason.message : "加载失败") } finally { setLoading(false) } }, [])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
+  const changed = async () => { await Promise.all([load(), onShellChanged()]) }
 
-  const openCreate = () => { if (entity === "menus") setMenuDraft(emptyMenu()); if (entity === "roles") setRoleDraft(emptyRole()); if (entity === "users") setUserDraft(emptyUser()) }
-  const openMenu = (menu: SystemMenuRecord) => setMenuDraft({ ...menu, targetId: menu.targetId || "", permissionCode: menu.permissionCode || "" })
-  const openRole = (role: RoleRecord) => setRoleDraft({ id: role.id, code: role.code, name: role.name, description: role.description || "", permissions: role.permissions.join("\n") })
-  const openUser = (user: UserRecord) => setUserDraft({ id: user.id, editing: true, name: user.name, email: user.email || "", departmentId: user.departmentId || "", departmentName: user.departmentName || "", status: user.status, roleIds: user.roles.map((role) => role.id) })
-
-  const saveMenu = async () => {
-    if (!menuDraft) return
-    const input: SystemMenuRecord = { id: menuDraft.id, groupId: menuDraft.groupId, groupLabel: menuDraft.groupLabel, label: menuDraft.label, icon: menuDraft.icon, target: menuDraft.target, ...(menuDraft.targetId ? { targetId: menuDraft.targetId } : {}), ...(menuDraft.permissionCode ? { permissionCode: menuDraft.permissionCode } : {}), order: menuDraft.order, enabled: menuDraft.enabled }
-    try { if (data.menus.some((item) => item.id === input.id)) { const { id, ...update } = input; await api.updateMenu(id, update) } else await api.createMenu(input); setMenuDraft(null); await Promise.all([load(), onShellChanged()]) } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败") }
-  }
-  const saveRole = async () => {
-    if (!roleDraft) return
-    const permissions = [...new Set(roleDraft.permissions.split(/[\n,]/).map((item) => item.trim()).filter(Boolean))]
-    try { if (roleDraft.id) await api.updateRole(roleDraft.id, { name: roleDraft.name, description: roleDraft.description, permissions }); else await api.createRole({ code: roleDraft.code, name: roleDraft.name, description: roleDraft.description, permissions }); setRoleDraft(null); await Promise.all([load(), onShellChanged()]) } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败") }
-  }
-  const saveUser = async () => {
-    if (!userDraft) return
-    const input = { name: userDraft.name, ...(userDraft.email ? { email: userDraft.email } : {}), ...(userDraft.departmentId ? { departmentId: userDraft.departmentId } : {}), ...(userDraft.departmentName ? { departmentName: userDraft.departmentName } : {}), status: userDraft.status, roleIds: userDraft.roleIds }
-    try { if (userDraft.editing) await api.updateUser(userDraft.id, input); else await api.createUser({ id: userDraft.id, ...input }); setUserDraft(null); await Promise.all([load(), onShellChanged()]) } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败") }
-  }
-  const remove = async () => {
-    if (!confirm) return
-    try { if (confirm.entity === "menus") await api.removeMenu(confirm.id); if (confirm.entity === "roles") await api.removeRole(confirm.id); if (confirm.entity === "users") await api.removeUser(confirm.id); setConfirm(null); await Promise.all([load(), onShellChanged()]) } catch (reason) { setConfirm(null); setError(reason instanceof Error ? reason.message : "删除失败") }
-  }
-
-  return <><PageHeader eyebrow="系统管理 / RBAC" title={meta.title} description={meta.description} actions={<Button variant="primary" onClick={openCreate}><Plus />{meta.create}</Button>} />{error && <Alert variant="danger">{error}</Alert>}{loading ? <Card className="management-loading"><Spinner label="正在加载系统管理数据..." /></Card> : <Card className="management-table">{entity === "menus" && <MenuTable menus={data.menus} onEdit={openMenu} onRemove={(menu) => setConfirm({ entity: "menus", id: menu.id, label: menu.label })} />}{entity === "roles" && <RoleTable roles={data.roles} onEdit={openRole} onRemove={(role) => setConfirm({ entity: "roles", id: role.id, label: role.name })} />}{entity === "users" && <UserTable users={data.users} onEdit={openUser} onRemove={(user) => setConfirm({ entity: "users", id: user.id, label: user.name })} />}</Card>}
-    <Dialog open={Boolean(menuDraft)} title={data.menus.some((item) => item.id === menuDraft?.id) ? "编辑菜单" : "新建菜单"} description="菜单保存后会立即更新应用外壳。" onClose={() => setMenuDraft(null)} footer={<><Button onClick={() => setMenuDraft(null)}>取消</Button><Button variant="primary" onClick={saveMenu}>保存菜单</Button></>}>{menuDraft && <MenuForm value={menuDraft} editing={data.menus.some((item) => item.id === menuDraft.id)} onChange={setMenuDraft} />}</Dialog>
-    <Dialog open={Boolean(roleDraft)} title={roleDraft?.id ? "编辑角色" : "新建角色"} description="每行填写一个权限码，也可以使用英文逗号分隔。" onClose={() => setRoleDraft(null)} footer={<><Button onClick={() => setRoleDraft(null)}>取消</Button><Button variant="primary" onClick={saveRole}>保存角色</Button></>}>{roleDraft && <RoleForm value={roleDraft} onChange={setRoleDraft} />}</Dialog>
-    <Dialog open={Boolean(userDraft)} title={userDraft?.editing ? "编辑用户" : "新建用户"} description="禁用用户后，其数据库角色权限不会进入外壳。" onClose={() => setUserDraft(null)} footer={<><Button onClick={() => setUserDraft(null)}>取消</Button><Button variant="primary" onClick={saveUser}>保存用户</Button></>}>{userDraft && <UserForm value={userDraft} roles={data.roles} onChange={setUserDraft} />}</Dialog>
-    <ConfirmDialog open={Boolean(confirm)} title="确认删除" description={`确认删除“${confirm?.label || ""}”？相关系统配置可能立即失效。`} destructive confirmLabel="删除" onClose={() => setConfirm(null)} onConfirm={remove} />
+  return <><PageHeader eyebrow="系统管理 / RBAC" title={meta.title} description={meta.description} actions={<Button onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />刷新</Button>} />
+    {error && <Alert variant="danger">{error}</Alert>}
+    {loading && data.menus.length === 0 ? <Card className="management-loading"><Spinner label="正在加载系统管理数据..." /></Card> : <>
+      {entity === "menus" && <MenuManagement menus={data.menus} onChanged={changed} onError={setError} />}
+      {entity === "departments" && <DepartmentManagement departments={data.departments} onChanged={changed} onError={setError} />}
+      {entity === "roles" && <RoleManagement roles={data.roles} menus={data.menus} onChanged={changed} onError={setError} />}
+      {entity === "users" && <UserManagement users={data.users} roles={data.roles} departments={data.departments} onChanged={changed} onError={setError} />}
+    </>}
   </>
 }
-
-function MenuTable({ menus, onEdit, onRemove }: { menus: SystemMenuRecord[]; onEdit: (menu: SystemMenuRecord) => void; onRemove: (menu: SystemMenuRecord) => void }) { if (!menus.length) return <EmptyState title="暂无菜单" />; return <Table><TableHeader><TableRow><TableHead>分组 / 菜单</TableHead><TableHead>目标</TableHead><TableHead>权限码</TableHead><TableHead>排序</TableHead><TableHead>状态</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{menus.map((menu) => <TableRow key={menu.id}><TableCell><strong>{menu.groupLabel} / {menu.label}</strong><small>{menu.id}</small></TableCell><TableCell>{menu.target}{menu.targetId && ` · ${menu.targetId}`}</TableCell><TableCell><code>{menu.permissionCode || "公开"}</code></TableCell><TableCell>{menu.order}</TableCell><TableCell><Badge variant={menu.enabled ? "success" : "neutral"}>{menu.enabled ? "启用" : "停用"}</Badge></TableCell><TableCell><ManagementActions onEdit={() => onEdit(menu)} onRemove={() => onRemove(menu)} /></TableCell></TableRow>)}</TableBody></Table> }
-function RoleTable({ roles, onEdit, onRemove }: { roles: RoleRecord[]; onEdit: (role: RoleRecord) => void; onRemove: (role: RoleRecord) => void }) { if (!roles.length) return <EmptyState title="暂无角色" />; return <Table><TableHeader><TableRow><TableHead>角色</TableHead><TableHead>说明</TableHead><TableHead>权限</TableHead><TableHead>用户数</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{roles.map((role) => <TableRow key={role.id}><TableCell><strong>{role.name}</strong><small>{role.code}</small></TableCell><TableCell>{role.description || "—"}</TableCell><TableCell><div className="permission-tags">{role.permissions.slice(0, 4).map((permission) => <Badge key={permission} variant="primary">{permission}</Badge>)}{role.permissions.length > 4 && <Badge>+{role.permissions.length - 4}</Badge>}</div></TableCell><TableCell>{role.userCount}</TableCell><TableCell><ManagementActions onEdit={() => onEdit(role)} onRemove={() => onRemove(role)} /></TableCell></TableRow>)}</TableBody></Table> }
-function UserTable({ users, onEdit, onRemove }: { users: UserRecord[]; onEdit: (user: UserRecord) => void; onRemove: (user: UserRecord) => void }) { if (!users.length) return <EmptyState title="暂无用户" />; return <Table><TableHeader><TableRow><TableHead>用户</TableHead><TableHead>部门</TableHead><TableHead>角色</TableHead><TableHead>状态</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{users.map((user) => <TableRow key={user.id}><TableCell><strong>{user.name}</strong><small>{user.id} · {user.email || "无邮箱"}</small></TableCell><TableCell>{user.departmentName || "—"}</TableCell><TableCell><div className="permission-tags">{user.roles.map((role) => <Badge key={role.id} variant="primary">{role.name}</Badge>)}</div></TableCell><TableCell><Badge variant={user.status === "ACTIVE" ? "success" : "danger"}>{user.status === "ACTIVE" ? "启用" : "禁用"}</Badge></TableCell><TableCell><ManagementActions onEdit={() => onEdit(user)} onRemove={() => onRemove(user)} /></TableCell></TableRow>)}</TableBody></Table> }
-function ManagementActions({ onEdit, onRemove }: { onEdit: () => void; onRemove: () => void }) { return <div className="management-actions"><IconButton aria-label="编辑" onClick={onEdit}><Edit3 /></IconButton><IconButton aria-label="删除" onClick={onRemove}><Trash2 /></IconButton></div> }
-
-function MenuForm({ value, editing, onChange }: { value: MenuDraft; editing: boolean; onChange: (value: MenuDraft) => void }) { return <div className="management-form"><FormField label="菜单标识" required><Input value={value.id} disabled={editing} onChange={(event) => onChange({ ...value, id: event.target.value })} placeholder="system:example" /></FormField><FormField label="菜单名称" required><Input value={value.label} onChange={(event) => onChange({ ...value, label: event.target.value })} /></FormField><FormField label="分组标识" required><Input value={value.groupId} onChange={(event) => onChange({ ...value, groupId: event.target.value })} /></FormField><FormField label="分组名称" required><Input value={value.groupLabel} onChange={(event) => onChange({ ...value, groupLabel: event.target.value })} /></FormField><FormField label="图标名称"><Input value={value.icon} onChange={(event) => onChange({ ...value, icon: event.target.value })} /></FormField><FormField label="跳转目标"><Select value={value.target} onChange={(event) => onChange({ ...value, target: event.target.value as MenuDraft["target"] })}>{["dashboard", "document-list", "declaration-name", "menu-management", "user-management", "role-management", "settings", "help"].map((target) => <option key={target}>{target}</option>)}</Select></FormField><FormField label="目标参数"><Input value={value.targetId} onChange={(event) => onChange({ ...value, targetId: event.target.value })} placeholder="例如 quotation" /></FormField><FormField label="所需权限"><Input value={value.permissionCode} onChange={(event) => onChange({ ...value, permissionCode: event.target.value })} placeholder="system:example:manage" /></FormField><FormField label="排序"><Input type="number" value={value.order} onChange={(event) => onChange({ ...value, order: Number(event.target.value) })} /></FormField><label className="ui-inline-check"><Checkbox checked={value.enabled} onChange={(event) => onChange({ ...value, enabled: event.target.checked })} />启用菜单</label></div> }
-function RoleForm({ value, onChange }: { value: RoleDraft; onChange: (value: RoleDraft) => void }) { return <div className="management-form"><FormField label="角色编码" required><Input value={value.code} disabled={Boolean(value.id)} onChange={(event) => onChange({ ...value, code: event.target.value.toUpperCase() })} placeholder="BUSINESS_MANAGER" /></FormField><FormField label="角色名称" required><Input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} /></FormField><FormField label="角色说明" className="span-2"><Input value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} /></FormField><FormField label="权限码" required className="span-2"><Textarea rows={7} value={value.permissions} onChange={(event) => onChange({ ...value, permissions: event.target.value })} placeholder={"dashboard:view\ndocument:quotation:view"} /></FormField></div> }
-function UserForm({ value, roles, onChange }: { value: UserDraft; roles: RoleRecord[]; onChange: (value: UserDraft) => void }) { return <div className="management-form"><FormField label="用户标识" required><Input value={value.id} disabled={value.editing} onChange={(event) => onChange({ ...value, id: event.target.value })} /></FormField><FormField label="姓名" required><Input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} /></FormField><FormField label="邮箱"><Input type="email" value={value.email} onChange={(event) => onChange({ ...value, email: event.target.value })} /></FormField><FormField label="状态"><Select value={value.status} onChange={(event) => onChange({ ...value, status: event.target.value as UserStatus })}><option value="ACTIVE">启用</option><option value="DISABLED">禁用</option></Select></FormField><FormField label="部门标识"><Input value={value.departmentId} onChange={(event) => onChange({ ...value, departmentId: event.target.value })} /></FormField><FormField label="部门名称"><Input value={value.departmentName} onChange={(event) => onChange({ ...value, departmentName: event.target.value })} /></FormField><FormField label="分配角色" className="span-2"><div className="role-options">{roles.map((role) => <label key={role.id}><Checkbox checked={value.roleIds.includes(role.id)} onChange={(event) => onChange({ ...value, roleIds: event.target.checked ? [...value.roleIds, role.id] : value.roleIds.filter((id) => id !== role.id) })} />{role.name}<small>{role.code}</small></label>)}</div></FormField></div> }

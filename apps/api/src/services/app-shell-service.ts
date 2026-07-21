@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client"
 import type { ApplicationShellConfig, DashboardWidgetId, ShellBootstrapData, UserNotification, UserShellSettings } from "@zform/shared"
 import { prisma } from "../database.js"
 
-const DEFAULT_WIDGETS: DashboardWidgetId[] = ["metrics", "recent-documents", "business-distribution", "business-flow", "recent-activities"]
+const DEFAULT_WIDGETS: DashboardWidgetId[] = ["metrics", "customer-research-queue", "recent-documents", "business-distribution", "business-flow", "recent-activities"]
 const DEFAULT_SETTINGS: UserShellSettings = { theme: "light", compactMode: false, sidebarCollapsed: false, dashboardWidgetIds: DEFAULT_WIDGETS, showGlobalStatusBar: true }
 
 export async function shellConfig(): Promise<ApplicationShellConfig> {
@@ -18,6 +18,7 @@ export async function shellConfig(): Promise<ApplicationShellConfig> {
     menuGroups: [...groupMap.values()],
     dashboardWidgets: [
       { id: "metrics", label: "核心指标", defaultVisible: true, order: 10 },
+      { id: "customer-research-queue", label: "客户调查队列", defaultVisible: true, order: 15 },
       { id: "recent-documents", label: "最近单据", defaultVisible: true, order: 20 },
       { id: "business-distribution", label: "业务分布", defaultVisible: true, order: 30 },
       { id: "business-flow", label: "业务链路", defaultVisible: true, order: 40 },

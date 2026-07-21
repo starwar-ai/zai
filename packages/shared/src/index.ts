@@ -77,6 +77,7 @@ export interface DetailTableSchema {
   maxRows?: number
   visibleWhen?: ConditionExpression
   rowSelector?: RowSelectorDefinition
+  readOnly?: boolean
 }
 
 export type DocumentAction = "submit" | "approve" | "reject" | "complete" | "cancel"
@@ -198,6 +199,8 @@ export interface DocumentSchema {
   pushDownRules?: PushDownRuleDefinition[]
   impactRules?: ImpactRuleDefinition[]
   extraTabs?: ExtraTabDefinition[]
+  statusLabels?: Partial<Record<DocumentStatus, string>>
+  includeInBusinessFlow?: boolean
   /** @deprecated 使用 formActions。保留用于兼容旧 Schema。 */
   actions?: Partial<Record<DocumentStatus, DocumentAction[]>>
   /** @deprecated 使用 pushDownRules。 */
@@ -210,6 +213,16 @@ export interface SourceReference { documentId: string; typeId: string; code: str
 export interface RowSourceReference extends SourceReference { tableId: string; rowId: string }
 export interface DetailRowData { id: string; data: Record<string, unknown>; sourceRef?: RowSourceReference }
 export interface DetailTableData { tableId: string; rows: DetailRowData[] }
+
+export type ParsedDocumentFieldPath =
+  | { scope: "master"; fieldId: string }
+  | { scope: "detail"; tableId: string; fieldId: string }
+
+export interface DocumentSnapshot { masterData: Record<string, unknown>; detailTables: DetailTableData[] }
+export interface DocumentFieldChange { path: string; previousValue?: unknown; nextValue?: unknown; rowId?: string }
+export interface DetailTableDiff { tableId: string; addedRowIds: string[]; removedRowIds: string[]; changes: DocumentFieldChange[] }
+export interface DocumentDiff { changedPaths: string[]; masterChanges: DocumentFieldChange[]; detailTableDiffs: DetailTableDiff[] }
+export interface ReverseFieldMapping { ruleId: string; sourceTypeId: string; targetTypeId: string; sourcePath: string; targetPath: string; sourceTableId?: string; targetTableId?: string }
 
 export interface DocumentRecord {
   id: string
@@ -290,13 +303,13 @@ export interface DashboardData {
 }
 
 export type ShellTheme = "light" | "system"
-export type DashboardWidgetId = "metrics" | "recent-documents" | "business-distribution" | "business-flow" | "recent-activities"
+export type DashboardWidgetId = "metrics" | "customer-research-queue" | "recent-documents" | "business-distribution" | "business-flow" | "recent-activities"
 
 export interface ShellMenuItem {
   id: string
   label: string
   icon: string
-  target: "dashboard" | "document-list" | "settings" | "help" | "menu-management" | "user-management" | "role-management" | "declaration-name"
+  target: "dashboard" | "document-list" | "settings" | "help" | "menu-management" | "user-management" | "role-management" | "department-management" | "declaration-name" | "ocr-recognition"
   targetId?: string
   requiredPermissions?: string[]
 }
@@ -357,7 +370,19 @@ export interface UserRecord {
   updatedAt: string
 }
 
-export interface SystemManagementData { menus: SystemMenuRecord[]; roles: RoleRecord[]; users: UserRecord[] }
+export interface DepartmentRecord { id: string; code: string; name: string; parentId?: string; order: number; userCount: number; createdAt: string; updatedAt: string }
+export interface DepartmentTreeNode extends DepartmentRecord { children: DepartmentTreeNode[] }
+export interface DepartmentInput { code: string; name: string; parentId?: string; order: number }
+export interface SystemManagementData { menus: SystemMenuRecord[]; roles: RoleRecord[]; users: UserRecord[]; departments: DepartmentRecord[] }
+
+export type OcrRecognitionStatus = "RECOGNIZING" | "SUCCESS" | "FAILED"
+export interface OcrPaymentData { platform?: string; orderNo?: string; productName?: string; amount?: string; paymentTime?: string; paymentStatus?: string; paymentMethod?: string; receiver?: string }
+export interface OcrRecognitionRecord extends OcrPaymentData { id: string; originalFilename: string; mimeType: string; status: OcrRecognitionStatus; errorMessage?: string; createdAt: string; updatedAt: string }
+export interface OcrRecognizeRequest { filename: string; mimeType: "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
+export interface OcrRecognizeResult { record: OcrRecognitionRecord; success: boolean }
+export interface OcrRecognitionQuery { keyword?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number }
+export interface OcrExportRequest { ids?: string[]; startDate?: string; endDate?: string }
+export interface OcrExportResult { base64: string; filename: string; count: number }
 
 export type DeclarationNameMappingStatus = "PENDING" | "GENERATING" | "APPROVED" | "REVIEW_REQUIRED" | "REJECTED" | "FAILED"
 export type DeclarationNameJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
@@ -467,6 +492,54 @@ export function evaluateDeclarationNameReview(input: { name: string; nameEng: st
 }
 
 export interface ApiEnvelope<T> { success: boolean; message: string; data: T }
+
+export type CustomerResearchDecision = "yes" | "no" | "uncertain"
+export interface CustomerResearchImportRow {
+  companyName: string
+  country?: string | null
+  website?: string | null
+  contactName?: string | null
+  contactEmail?: string | null
+  contactPhone?: string | null
+  rawData?: Record<string, string | number | boolean | null>
+}
+export interface CustomerResearchImportRequest { fileName: string; rows: CustomerResearchImportRow[] }
+export interface CustomerResearchImportResult { totalRows: number; importedRows: number; skippedRows: number; documentIds: string[] }
+export interface CustomerResearchSource { title: string; url: string; claim: string }
+export interface CustomerResearchResult {
+  companySummary: string
+  businessScope: string
+  scaleEstimate: string
+  annualSalesEstimateUsd: number | null
+  employeeEstimate: number | null
+  isVerifiedCompany: CustomerResearchDecision
+  verifiedCompanyReason: string
+  verifiedCompanyConfidence: number
+  isGardenOutdoor: CustomerResearchDecision
+  gardenOutdoorReason: string
+  gardenOutdoorConfidence: number
+  salesOverOneMillion: CustomerResearchDecision
+  salesReason: string
+  salesConfidence: number
+  employeesOverTen: CustomerResearchDecision
+  employeesReason: string
+  employeesConfidence: number
+  overallConfidence: number
+  sources: CustomerResearchSource[]
+  researchNotes: string
+}
+export interface CustomerResearchQueueSummary {
+  pending: number
+  researching: number
+  completed: number
+  failed: number
+  total: number
+  current?: { id: string; code: string; companyName: string }
+}
+export type CustomerResearchProcessResult =
+  | { status: "empty"; document: null }
+  | { status: "completed"; document: DocumentRecord }
+  | { status: "failed"; document: DocumentRecord; error: string }
 
 export const STATUS_LABELS: Record<DocumentStatus, string> = { DRAFT: "草稿", PENDING: "待审批", APPROVED: "已审批", IN_PROGRESS: "执行中", COMPLETED: "已完成", REJECTED: "已驳回", CANCELLED: "已取消" }
 export const ACTION_LABELS: Record<DocumentAction, string> = { submit: "提交审批", approve: "审批通过", reject: "驳回", complete: "完成", cancel: "取消" }

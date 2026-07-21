@@ -14,7 +14,7 @@ export function createApp(): Express {
   registerOpenApi(app)
   app.use(helmet())
   app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5174" }))
-  app.use(express.json({ limit: "1mb" }))
+  app.use(express.json({ limit: "12mb" }))
   app.use(routes)
 
   // 生产构建后由 API 同时托管管理端静态资源。

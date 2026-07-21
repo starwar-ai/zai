@@ -1,9 +1,9 @@
 import { Prisma } from "@prisma/client"
-import type { RoleRecord, SystemManagementData, SystemMenuRecord, UserRecord, UserStatus } from "@zform/shared"
+import type { DepartmentInput, DepartmentRecord, RoleRecord, SystemManagementData, SystemMenuRecord, UserRecord, UserStatus } from "@zform/shared"
 import { prisma } from "../database.js"
 import { BusinessError } from "../utils/business-error.js"
 
-const menuTargets = ["dashboard", "document-list", "settings", "help", "menu-management", "user-management", "role-management", "declaration-name"] as const
+const menuTargets = ["dashboard", "document-list", "settings", "help", "menu-management", "user-management", "role-management", "department-management", "declaration-name", "ocr-recognition"] as const
 
 export async function assertSystemPermission(userId: string, permission: string): Promise<void> {
   const user = await prisma.appUser.findUnique({ where: { id: userId }, include: { roles: { include: { role: true } } } })
@@ -30,13 +30,57 @@ function toUser(row: { id: string; name: string; email: string | null; departmen
   return { id: row.id, name: row.name, ...(row.email ? { email: row.email } : {}), ...(row.departmentId ? { departmentId: row.departmentId } : {}), ...(row.departmentName ? { departmentName: row.departmentName } : {}), status: row.status === "DISABLED" ? "DISABLED" : "ACTIVE", roles: row.roles.map((item) => item.role), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
 }
 
+function toDepartment(row: { id: string; code: string; name: string; parentId: string | null; order: number; createdAt: Date; updatedAt: Date; userCount?: number }): DepartmentRecord {
+  return { id: row.id, code: row.code, name: row.name, ...(row.parentId ? { parentId: row.parentId } : {}), order: row.order, userCount: row.userCount || 0, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
+}
+
 export async function listSystemManagement(): Promise<SystemManagementData> {
-  const [menus, roles, users] = await Promise.all([
+  const [menus, roles, users, departments] = await Promise.all([
     prisma.systemMenu.findMany({ orderBy: [{ order: "asc" }, { id: "asc" }] }),
     prisma.role.findMany({ include: { _count: { select: { users: true } } }, orderBy: { createdAt: "asc" } }),
     prisma.appUser.findMany({ include: { roles: { include: { role: true } } }, orderBy: { createdAt: "asc" } }),
+    prisma.department.findMany({ orderBy: [{ order: "asc" }, { code: "asc" }] }),
   ])
-  return { menus: menus.map(toMenu), roles: roles.map(toRole), users: users.map(toUser) }
+  const userCounts = new Map<string, number>()
+  users.forEach((user) => { if (user.departmentId) userCounts.set(user.departmentId, (userCounts.get(user.departmentId) || 0) + 1) })
+  return { menus: menus.map(toMenu), roles: roles.map(toRole), users: users.map(toUser), departments: departments.map((department) => toDepartment({ ...department, userCount: userCounts.get(department.id) || 0 })) }
+}
+
+export async function createDepartment(input: DepartmentInput): Promise<DepartmentRecord> {
+  if (input.parentId && !await prisma.department.findUnique({ where: { id: input.parentId } })) throw new BusinessError("上级部门不存在。", 404)
+  try { return toDepartment(await prisma.department.create({ data: input })) }
+  catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new BusinessError("部门编码已存在。", 409); throw error }
+}
+
+export async function updateDepartment(id: string, input: DepartmentInput): Promise<DepartmentRecord> {
+  const departments = await prisma.department.findMany()
+  if (!departments.some((department) => department.id === id)) throw new BusinessError("部门不存在。", 404)
+  if (input.parentId === id) throw new BusinessError("部门不能作为自己的上级。")
+  const parentById = new Map(departments.map((department) => [department.id, department.parentId]))
+  let ancestorId = input.parentId
+  while (ancestorId) {
+    if (ancestorId === id) throw new BusinessError("不能将部门移动到自己的下级部门。")
+    ancestorId = parentById.get(ancestorId) || undefined
+  }
+  try { return toDepartment(await prisma.department.update({ where: { id }, data: input })) }
+  catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new BusinessError("部门编码已存在。", 409); throw error }
+}
+
+export async function removeDepartment(id: string): Promise<void> {
+  await prisma.$transaction(async (client) => {
+    const [department, childCount, userCount] = await Promise.all([client.department.findUnique({ where: { id } }), client.department.count({ where: { parentId: id } }), client.appUser.count({ where: { departmentId: id } })])
+    if (!department) throw new BusinessError("部门不存在。", 404)
+    if (childCount) throw new BusinessError("该部门存在下级部门，不能删除。")
+    if (userCount) throw new BusinessError("该部门仍有关联用户，不能删除。")
+    await client.department.delete({ where: { id } })
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+}
+
+async function resolveDepartment(client: Prisma.TransactionClient, departmentId?: string): Promise<{ departmentId?: string; departmentName?: string }> {
+  if (!departmentId) return {}
+  const department = await client.department.findUnique({ where: { id: departmentId } })
+  if (!department) throw new BusinessError("所选部门不存在。", 404)
+  return { departmentId: department.id, departmentName: department.name }
 }
 
 export async function createMenu(input: SystemMenuRecord): Promise<SystemMenuRecord> {
@@ -60,16 +104,18 @@ export async function updateRole(id: string, input: { name: string; description?
 }
 
 export async function removeRole(id: string): Promise<void> {
-  const role = await prisma.role.findUnique({ where: { id } })
+  const role = await prisma.role.findUnique({ where: { id }, include: { _count: { select: { users: true } } } })
   if (!role) throw new BusinessError("角色不存在。", 404)
   if (role.code === "SYSTEM_ADMIN") throw new BusinessError("系统管理员角色不能删除。")
+  if (role._count.users) throw new BusinessError("角色仍有关联用户，不能删除。")
   await prisma.role.delete({ where: { id } })
 }
 
 export async function createUser(input: { id: string; name: string; email?: string; departmentId?: string; departmentName?: string; status: UserStatus; roleIds: string[] }): Promise<UserRecord> {
   try {
     return await prisma.$transaction(async (client) => {
-      await client.appUser.create({ data: { id: input.id, name: input.name, email: input.email, departmentId: input.departmentId, departmentName: input.departmentName, status: input.status, roles: { create: input.roleIds.map((roleId) => ({ roleId })) } } })
+      const department = await resolveDepartment(client, input.departmentId)
+      await client.appUser.create({ data: { id: input.id, name: input.name, email: input.email, ...department, status: input.status, roles: { create: input.roleIds.map((roleId) => ({ roleId })) } } })
       return toUser(await client.appUser.findUniqueOrThrow({ where: { id: input.id }, include: { roles: { include: { role: true } } } }))
     })
   } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new BusinessError("用户标识已存在。", 409); throw error }
@@ -77,7 +123,8 @@ export async function createUser(input: { id: string; name: string; email?: stri
 
 export async function updateUser(id: string, input: { name: string; email?: string; departmentId?: string; departmentName?: string; status: UserStatus; roleIds: string[] }): Promise<UserRecord> {
   return prisma.$transaction(async (client) => {
-    await client.appUser.update({ where: { id }, data: { name: input.name, email: input.email, departmentId: input.departmentId, departmentName: input.departmentName, status: input.status } })
+    const department = await resolveDepartment(client, input.departmentId)
+    await client.appUser.update({ where: { id }, data: { name: input.name, email: input.email, departmentId: department.departmentId || null, departmentName: department.departmentName || null, status: input.status } })
     await client.userRole.deleteMany({ where: { userId: id } })
     if (input.roleIds.length) await client.userRole.createMany({ data: input.roleIds.map((roleId) => ({ userId: id, roleId })) })
     return toUser(await client.appUser.findUniqueOrThrow({ where: { id }, include: { roles: { include: { role: true } } } }))

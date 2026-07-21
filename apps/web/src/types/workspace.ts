@@ -5,7 +5,8 @@ export type WorkspaceView =
   | { kind: "editor"; id: string; returnTypeId: string }
   | { kind: "settings" }
   | { kind: "help" }
-  | { kind: "system"; entity: "menus" | "users" | "roles" }
+  | { kind: "system"; entity: "menus" | "users" | "roles" | "departments" }
   | { kind: "declaration-name" }
+  | { kind: "ocr" }
 
 export interface WorkspaceTab { id: string; title: string; view: WorkspaceView; closable: boolean; dirty?: boolean; revision: number }

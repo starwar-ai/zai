@@ -27,8 +27,10 @@ export function ExamplePage() {
 - `Badge`、`Alert`、`Spinner`、`EmptyState`：状态与反馈
 - `Dialog`、`ConfirmDialog`：模态交互
 - `Tabs`、`TabPanel`：页面内部受控标签
+- `Progress`、`Separator`：进度反馈与内容分隔
 - `Table` 系列：简单语义数据表格
-- `Pagination`：服务端分页控制
+- `Pagination`：服务端分页、每页条数与首页/末页控制
+- `ColumnSettings`：复杂列表的列显示、顺序和左右分组设置
 - `cn`：过滤并拼接 className
 
 ## 使用边界
@@ -36,6 +38,6 @@ export function ExamplePage() {
 - 复杂单据列表使用 `DocumentList` 和 `/api/documents/query`，不要用基础 `Table` 重写分页、权限、过滤和聚合。
 - Schema 字段使用 `FieldRenderer`；基础表单或配置页才直接组合 Input/Select 等组件。
 - 多标签工作区使用 `WorkspaceTabs`，页面内部局部切换使用 `Tabs`。
-- 业务确认优先使用 `ConfirmDialog`。现有遗留的 `window.confirm` 可逐步替换，新代码不要再新增。
+- 业务确认使用 `ConfirmDialog`，不要新增 `window.confirm`。
 - 业务状态、字段规则和权限不能写入基础 UI 组件。
 - 新增共通组件时必须从 `index.ts` 导出，并在 `UiShowcase` 增加至少一个可视示例。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { applyPushDownRule, assessDocumentImpact, evaluateCondition, evaluateFormula } from "./runtime.js"
+import { applyPushDownRule, assessDocumentImpact, buildDocumentDiff, evaluateCondition, evaluateFormula, getReverseFieldMappings, hasWatchedFieldChanges } from "./runtime.js"
 import type { DocumentRecord, PushDownRuleDefinition } from "./index.js"
 
 const source: DocumentRecord = {
@@ -35,5 +35,19 @@ describe("声明式运行时", () => {
     const assessment = assessDocumentImpact(source, { ...source.masterData, customer: "新客户" }, [{ id: "customer-change", watchFields: ["customer"], level: "critical", message: "{field} 已变化", blocksSave: true }], [downstream])
     expect(assessment.canProceed).toBe(false)
     expect(assessment.items[0].downstreamDocuments[0].code).toBe("TGT-001")
+  })
+
+  it("生成主表和明细的可序列化差异", () => {
+    const next = { masterData: { ...source.masterData, customer: "新客户" }, detailTables: [{ tableId: "items", rows: [{ id: "row-1", data: { sku: "A-01", quantity: 5, selected: true } }, { id: "row-3", data: { sku: "A-03" } }] }] }
+    const diff = buildDocumentDiff(source, next)
+    expect(diff.changedPaths).toEqual(expect.arrayContaining(["master.customer", "detail.items", "detail.items.quantity"]))
+    expect(diff.detailTableDiffs[0]?.addedRowIds).toEqual(["row-3"])
+    expect(diff.detailTableDiffs[0]?.removedRowIds).toEqual(["row-2"])
+    expect(hasWatchedFieldChanges(diff, ["customer"])).toBe(true)
+  })
+
+  it("为下推规则生成反向映射索引", () => {
+    const mappings = getReverseFieldMappings("source", [{ id: "push", label: "下推", targetTypeId: "target", masterFields: [{ source: "customer", target: "buyer" }], detailTables: [{ sourceTableId: "items", targetTableId: "lines", fields: [{ source: "sku", target: "code" }] }] }])
+    expect(mappings.map((mapping) => [mapping.sourcePath, mapping.targetPath])).toEqual([["master.customer", "master.buyer"], ["detail.items.sku", "detail.lines.code"]])
   })
 })

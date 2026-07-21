@@ -1,4 +1,4 @@
-import type { ConditionExpression, DetailRowData, DetailTableData, DocumentRecord, FieldMappingDefinition, FormulaDefinition, FormMode, ImpactAssessment, ImpactItem, ImpactRuleDefinition, PushDownRuleDefinition } from "./index.js"
+import type { ConditionExpression, DetailRowData, DetailTableData, DetailTableDiff, DocumentDiff, DocumentRecord, DocumentSnapshot, FieldMappingDefinition, FormulaDefinition, FormMode, ImpactAssessment, ImpactItem, ImpactRuleDefinition, ParsedDocumentFieldPath, PushDownRuleDefinition, ReverseFieldMapping } from "./index.js"
 
 export function getPathValue(data: Record<string, unknown>, path: string): unknown {
   const normalized = path.startsWith("master.") ? path.slice(7) : path
@@ -79,4 +79,61 @@ export function assessDocumentImpact(oldDocument: DocumentRecord, nextMasterData
     })
   }
   return { canProceed: !items.some((item) => item.blocksSave), items, summary: items.length ? `检测到 ${items.length} 项下游影响` : "未检测到下游影响" }
+}
+
+/** 解析 Schema 使用的逻辑字段路径，不暴露数据库列名。 */
+export function parseDocumentFieldPath(path: string, defaultDetailTableId?: string): ParsedDocumentFieldPath {
+  const parts = path.split(".").filter(Boolean)
+  if (parts[0] === "master") return { scope: "master", fieldId: parts.slice(1).join(".") }
+  if (parts[0] === "detail" && parts.length >= 3) return { scope: "detail", tableId: parts[1]!, fieldId: parts.slice(2).join(".") }
+  return defaultDetailTableId ? { scope: "detail", tableId: defaultDetailTableId, fieldId: path } : { scope: "master", fieldId: path }
+}
+
+export function normalizeDocumentFieldPath(path: string, defaultDetailTableId?: string): string {
+  const parsed = parseDocumentFieldPath(path, defaultDetailTableId)
+  return parsed.scope === "master" ? `master.${parsed.fieldId}` : `detail.${parsed.tableId}.${parsed.fieldId}`
+}
+
+export function getDocumentFieldValue(snapshot: DocumentSnapshot, path: string, rowId?: string): unknown {
+  const parsed = parseDocumentFieldPath(path)
+  if (parsed.scope === "master") return getPathValue(snapshot.masterData, parsed.fieldId)
+  const rows = snapshot.detailTables.find((table) => table.tableId === parsed.tableId)?.rows || []
+  if (rowId) return getPathValue(rows.find((row) => row.id === rowId)?.data || {}, parsed.fieldId)
+  return rows.map((row) => getPathValue(row.data, parsed.fieldId))
+}
+
+function sameValue(left: unknown, right: unknown): boolean { return JSON.stringify(left) === JSON.stringify(right) }
+
+/** 对主数据与明细行按逻辑路径生成可序列化差异，供影响评估、审计和插件复用。 */
+export function buildDocumentDiff(previous: DocumentSnapshot, next: DocumentSnapshot): DocumentDiff {
+  const masterChanges = [...new Set([...Object.keys(previous.masterData), ...Object.keys(next.masterData)])].filter((fieldId) => !sameValue(previous.masterData[fieldId], next.masterData[fieldId])).map((fieldId) => ({ path: `master.${fieldId}`, previousValue: previous.masterData[fieldId], nextValue: next.masterData[fieldId] }))
+  const tableIds = [...new Set([...previous.detailTables.map((table) => table.tableId), ...next.detailTables.map((table) => table.tableId)])]
+  const detailTableDiffs: DetailTableDiff[] = tableIds.map((tableId) => {
+    const previousRows = previous.detailTables.find((table) => table.tableId === tableId)?.rows || []
+    const nextRows = next.detailTables.find((table) => table.tableId === tableId)?.rows || []
+    const previousById = new Map(previousRows.map((row) => [row.id, row]))
+    const nextById = new Map(nextRows.map((row) => [row.id, row]))
+    const sharedIds = [...previousById.keys()].filter((id) => nextById.has(id))
+    const changes = sharedIds.flatMap((rowId) => {
+      const before = previousById.get(rowId)?.data || {}
+      const after = nextById.get(rowId)?.data || {}
+      return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((fieldId) => !sameValue(before[fieldId], after[fieldId])).map((fieldId) => ({ path: `detail.${tableId}.${fieldId}`, rowId, previousValue: before[fieldId], nextValue: after[fieldId] }))
+    })
+    return { tableId, addedRowIds: nextRows.filter((row) => !previousById.has(row.id)).map((row) => row.id), removedRowIds: previousRows.filter((row) => !nextById.has(row.id)).map((row) => row.id), changes }
+  }).filter((diff) => diff.addedRowIds.length > 0 || diff.removedRowIds.length > 0 || diff.changes.length > 0)
+  const changedPaths = [...new Set([...masterChanges.map((change) => change.path), ...detailTableDiffs.flatMap((diff) => [diff.addedRowIds.length || diff.removedRowIds.length ? `detail.${diff.tableId}` : "", ...diff.changes.map((change) => change.path)]).filter(Boolean)])]
+  return { changedPaths, masterChanges, detailTableDiffs }
+}
+
+export function hasWatchedFieldChanges(diff: DocumentDiff, watchedFields: string[]): boolean {
+  const normalized = watchedFields.map((field) => normalizeDocumentFieldPath(field))
+  return normalized.some((field) => diff.changedPaths.some((changed) => changed === field || changed.startsWith(`${field}.`) || field.startsWith(`${changed}.`)))
+}
+
+/** 生成下推规则的反向字段索引，供追溯和“修改来源字段”提示复用。 */
+export function getReverseFieldMappings(sourceTypeId: string, rules: PushDownRuleDefinition[]): ReverseFieldMapping[] {
+  return rules.flatMap((rule) => [
+    ...rule.masterFields.map((mapping) => ({ ruleId: rule.id, sourceTypeId, targetTypeId: rule.targetTypeId, sourcePath: normalizeDocumentFieldPath(mapping.source), targetPath: normalizeDocumentFieldPath(mapping.target) })),
+    ...rule.detailTables.flatMap((table) => table.fields.map((mapping) => ({ ruleId: rule.id, sourceTypeId, targetTypeId: rule.targetTypeId, sourcePath: normalizeDocumentFieldPath(mapping.source, table.sourceTableId), targetPath: normalizeDocumentFieldPath(mapping.target, table.targetTableId), sourceTableId: table.sourceTableId, targetTableId: table.targetTableId }))),
+  ])
 }

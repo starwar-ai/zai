@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight } from "lucide-react"
 import { Button } from "./button"
 import { cn } from "./utils"
 
@@ -10,5 +10,5 @@ export function TableRow({ className, ...props }: HTMLAttributes<HTMLTableRowEle
 export function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) { return <th className={cn("ui-table-head", className)} {...props} /> }
 export function TableCell({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) { return <td className={cn("ui-table-cell", className)} {...props} /> }
 
-interface PaginationProps { page: number; pageCount: number; total: number; pageSize: number; onPageChange: (page: number) => void; extra?: ReactNode }
-export function Pagination({ page, pageCount, total, pageSize, onPageChange, extra }: PaginationProps) { return <div className="ui-pagination"><span>共 {total} 条，每页 {pageSize} 条</span>{extra}<div><Button size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}><ChevronLeft />上一页</Button><b>{page} / {pageCount}</b><Button size="sm" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>下一页<ChevronRight /></Button></div></div> }
+interface PaginationProps { page: number; pageCount: number; total: number; pageSize: number; onPageChange: (page: number) => void; onPageSizeChange?: (pageSize: number) => void; pageSizeOptions?: number[]; extra?: ReactNode }
+export function Pagination({ page, pageCount, total, pageSize, onPageChange, onPageSizeChange, pageSizeOptions = [10, 20, 50, 100], extra }: PaginationProps) { return <div className="ui-pagination"><span>共 {total} 条</span>{onPageSizeChange && <label className="ui-page-size">每页<select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>{pageSizeOptions.map((size) => <option key={size} value={size}>{size} 条</option>)}</select></label>}{!onPageSizeChange && <span>每页 {pageSize} 条</span>}{extra}<div><Button size="sm" aria-label="第一页" title="第一页" disabled={page <= 1} onClick={() => onPageChange(1)}><ChevronsLeft /></Button><Button size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}><ChevronLeft />上一页</Button><b>{page} / {pageCount}</b><Button size="sm" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>下一页<ChevronRight /></Button><Button size="sm" aria-label="最后一页" title="最后一页" disabled={page >= pageCount} onClick={() => onPageChange(pageCount)}><ChevronsRight /></Button></div></div> }

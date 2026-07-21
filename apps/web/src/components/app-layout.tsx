@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Bell, Boxes, CircleHelp, FileText, Languages, LayoutDashboard, Menu, MenuSquare, PackageOpen, PanelLeftClose, Search, Settings, ShieldCheck, ShoppingCart, Sparkles, Users, Warehouse } from "lucide-react"
+import { Bell, Boxes, Building2, ChevronLeft, ChevronRight, CircleHelp, FileText, Languages, LayoutDashboard, MenuSquare, PackageOpen, ScanLine, SearchCheck, Settings, ShieldCheck, ShoppingCart, Sparkles, Users, Warehouse } from "lucide-react"
 import type { DashboardData, DocumentRecord, DocumentSchema, ShellBootstrapData, ShellMenuItem, UserNotification, UserShellSettings } from "@zform/shared"
 import { api } from "@/apis/framework-api"
 import { Dashboard } from "@/components/dashboard"
@@ -8,15 +8,17 @@ import { DocumentEditor } from "@/components/document-editor"
 import { DocumentList } from "@/components/document-list"
 import { GlobalStatusBar } from "@/components/global-status-bar"
 import { NotificationCenter } from "@/components/notification-center"
+import { OcrRecognition } from "@/components/ocr-recognition"
 import { SystemManagement } from "@/components/system-management"
-import { IconButton } from "@/components/ui"
+import { ConfirmDialog, IconButton } from "@/components/ui"
 import { UiShowcase } from "@/components/ui/ui-showcase"
 import { UserSettings } from "@/components/user-settings"
 import { WorkspaceTabs } from "@/components/workspace-tabs"
 import type { WorkspaceTab, WorkspaceView } from "@/types/workspace"
 
-const menuIcons = { LayoutDashboard, FileText, PackageOpen, ShoppingCart, Warehouse, Settings, CircleHelp, MenuSquare, Users, ShieldCheck, Languages }
+const menuIcons = { LayoutDashboard, FileText, PackageOpen, ShoppingCart, Warehouse, SearchCheck, Settings, CircleHelp, MenuSquare, Building2, Users, ShieldCheck, Languages, ScanLine }
 const dashboardTab: WorkspaceTab = { id: "dashboard", title: "工作台", view: { kind: "dashboard" }, closable: false, revision: 0 }
+interface DiscardRequest { description: string; action: () => void }
 
 export function AppLayout() {
   const [schemas, setSchemas] = useState<DocumentSchema[]>([])
@@ -29,6 +31,7 @@ export function AppLayout() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [discardRequest, setDiscardRequest] = useState<DiscardRequest | null>(null)
 
   const refreshDashboard = useCallback(async () => setDashboard(await api.dashboard()), [])
   useEffect(() => {
@@ -49,43 +52,54 @@ export function AppLayout() {
   const openView = useCallback((view: WorkspaceView, title: string, id: string, closable = true) => activateOrAdd({ id, title, view, closable, revision: 0 }), [activateOrAdd])
   const openList = useCallback((typeId?: string) => { const schema = schemas.find((item) => item.typeId === typeId); if (schema) openView({ kind: "list", typeId: schema.typeId }, schema.typeName, `list:${schema.typeId}`) }, [openView, schemas])
   const openDocument = useCallback((document: DocumentRecord) => openView({ kind: "editor", id: document.id, returnTypeId: document.typeId }, document.code, `editor:${document.id}`), [openView])
-  const confirmDiscard = (tab: WorkspaceTab) => !tab.dirty || window.confirm(`“${tab.title}”有未保存的更改，确认放弃吗？`)
-  const closeTab = (id: string): boolean => {
-    const tab = tabs.find((item) => item.id === id); if (!tab || !tab.closable || !confirmDiscard(tab)) return false
-    const next = tabs.filter((item) => item.id !== id); setTabs(next)
-    if (activeId === id) setActiveId(next[next.length - 1]?.id || "dashboard")
-    return true
+  const requestDiscard = (targets: WorkspaceTab[], action: () => void) => {
+    const dirty = targets.filter((tab) => tab.dirty)
+    if (!dirty.length) { action(); return }
+    setDiscardRequest({ description: dirty.length === 1 ? `“${dirty[0]?.title}”有未保存的更改，确认放弃吗？` : `${dirty.length} 个标签有未保存的更改，确认全部放弃吗？`, action })
+  }
+  const closeTab = (id: string, afterClose?: () => void) => {
+    const tab = tabs.find((item) => item.id === id); if (!tab || !tab.closable) return
+    requestDiscard([tab], () => { const next = tabs.filter((item) => item.id !== id); setTabs(next); if (activeId === id) setActiveId(next[next.length - 1]?.id || "dashboard"); afterClose?.() })
   }
   const closeOthers = (id: string) => {
-    const closing = tabs.filter((tab) => tab.id !== id && tab.closable); if (closing.some((tab) => !confirmDiscard(tab))) return
-    setTabs((current) => current.filter((tab) => tab.id === id || !tab.closable)); setActiveId(id)
+    const closing = tabs.filter((tab) => tab.id !== id && tab.closable)
+    requestDiscard(closing, () => { setTabs((current) => current.filter((tab) => tab.id === id || !tab.closable)); setActiveId(id) })
   }
   const closeAll = () => {
-    const closing = tabs.filter((tab) => tab.closable); if (closing.some((tab) => !confirmDiscard(tab))) return
-    setTabs(tabs.filter((tab) => !tab.closable)); setActiveId("dashboard")
+    const closing = tabs.filter((tab) => tab.closable)
+    requestDiscard(closing, () => { setTabs(tabs.filter((tab) => !tab.closable)); setActiveId("dashboard") })
   }
   const refreshTab = (id: string) => {
-    const tab = tabs.find((item) => item.id === id); if (!tab || !confirmDiscard(tab)) return
-    setTabs((current) => current.map((item) => item.id === id ? { ...item, dirty: false, revision: item.revision + 1 } : item))
+    const tab = tabs.find((item) => item.id === id); if (!tab) return
+    requestDiscard([tab], () => setTabs((current) => current.map((item) => item.id === id ? { ...item, dirty: false, revision: item.revision + 1 } : item)))
   }
-  const setDirty = useCallback((id: string, dirty: boolean) => setTabs((current) => current.map((tab) => tab.id === id && tab.dirty !== dirty ? { ...tab, dirty } : tab)), [])
+  const moveTab = (sourceId: string, targetId: string) => setTabs((current) => { const sourceIndex = current.findIndex((tab) => tab.id === sourceId); const targetIndex = current.findIndex((tab) => tab.id === targetId); if (sourceIndex <= 0 || targetIndex <= 0) return current; const next = [...current]; const [source] = next.splice(sourceIndex, 1); if (!source) return current; next.splice(targetIndex, 0, source); return next })
+  const setDirty = useCallback((id: string, dirty: boolean) => setTabs((current) => {
+    const target = current.find((tab) => tab.id === id)
+    if (!target || Boolean(target.dirty) === dirty) return current
+    return current.map((tab) => tab.id === id ? { ...tab, dirty } : tab)
+  }), [])
   const openMenu = (item: ShellMenuItem) => {
     if (item.target === "dashboard") setActiveId("dashboard")
     if (item.target === "document-list") openList(item.targetId)
     if (item.target === "settings") openView({ kind: "settings" }, "用户设置", "settings")
     if (item.target === "help") openView({ kind: "help" }, "使用帮助", "help")
     if (item.target === "menu-management") openView({ kind: "system", entity: "menus" }, "菜单管理", "system:menus")
+    if (item.target === "department-management") openView({ kind: "system", entity: "departments" }, "部门管理", "system:departments")
     if (item.target === "user-management") openView({ kind: "system", entity: "users" }, "用户管理", "system:users")
     if (item.target === "role-management") openView({ kind: "system", entity: "roles" }, "角色管理", "system:roles")
     if (item.target === "declaration-name") openView({ kind: "declaration-name" }, "报关名称审核", "declaration-name")
+    if (item.target === "ocr-recognition") openView({ kind: "ocr" }, "支付截图识别", "ocr-recognition")
   }
   const isMenuActive = (item: ShellMenuItem) => {
     if (item.target === "dashboard") return activeTab.view.kind === "dashboard"
     if (item.target === "document-list") return (activeTab.view.kind === "list" && activeTab.view.typeId === item.targetId) || (activeTab.view.kind === "editor" && activeTab.view.returnTypeId === item.targetId)
     if (item.target === "menu-management") return activeTab.view.kind === "system" && activeTab.view.entity === "menus"
+    if (item.target === "department-management") return activeTab.view.kind === "system" && activeTab.view.entity === "departments"
     if (item.target === "user-management") return activeTab.view.kind === "system" && activeTab.view.entity === "users"
     if (item.target === "role-management") return activeTab.view.kind === "system" && activeTab.view.entity === "roles"
     if (item.target === "declaration-name") return activeTab.view.kind === "declaration-name"
+    if (item.target === "ocr-recognition") return activeTab.view.kind === "ocr"
     return activeTab.view.kind === item.target
   }
   const saveUserSettings = async () => { if (settings) { const saved = await api.saveSettings(settings); setSettings(saved); setSidebarOpen(!saved.sidebarCollapsed) } }
@@ -101,10 +115,11 @@ export function AppLayout() {
     const view = tab.view
     if (view.kind === "dashboard") return dashboard && <Dashboard key={tab.revision} data={dashboard} schemas={schemas} visibleWidgets={settings?.dashboardWidgetIds || []} onOpenDocument={openDocument} onOpenList={openList} />
     if (view.kind === "list") return <DocumentList key={tab.revision} schema={schemas.find((schema) => schema.typeId === view.typeId)!} onOpen={openDocument} onChanged={refreshDashboard} />
-    if (view.kind === "editor") return <DocumentEditor key={tab.revision} documentId={view.id} schemas={schemas} onDirtyChange={(dirty) => setDirty(tab.id, dirty)} onBack={() => { if (closeTab(tab.id)) openList(view.returnTypeId) }} onOpen={openDocument} onChanged={refreshDashboard} />
+    if (view.kind === "editor") return <DocumentEditor key={tab.revision} documentId={view.id} schemas={schemas} onDirtyChange={(dirty) => setDirty(tab.id, dirty)} onBack={() => closeTab(tab.id, () => openList(view.returnTypeId))} onOpen={openDocument} onChanged={refreshDashboard} />
     if (view.kind === "settings" && shell && settings) return <UserSettings config={shell.config} settings={settings} onChange={setSettings} onSave={saveUserSettings} />
     if (view.kind === "system") return <SystemManagement entity={view.entity} onShellChanged={async () => { const next = await api.shell(); setShell(next) }} />
     if (view.kind === "declaration-name") return <DeclarationNameReview key={tab.revision} />
+    if (view.kind === "ocr") return <OcrRecognition key={tab.revision} />
     return <UiShowcase />
   }
 
@@ -112,11 +127,10 @@ export function AppLayout() {
   if (error || !shell || !settings) return <div className="splash error-state"><strong>暂时无法连接服务</strong><span>{error}</span><span className="muted">请先在 framework 目录运行 npm run dev</span></div>
 
   return <div className={`app-shell ${sidebarOpen ? "" : "sidebar-collapsed"} ${settings.compactMode ? "compact-shell" : ""} ${settings.showGlobalStatusBar ? "has-status-bar" : ""}`}>
-    <aside className="sidebar"><div className="brand"><div className="brand-mark"><Boxes size={20} /></div><div><strong>{shell.config.appName}</strong><span>{shell.config.appSubtitle}</span></div></div><nav>{shell.config.menuGroups.map((group) => { const items = group.items.filter(hasPermission); return items.length ? <div key={group.id}><p className="nav-label">{group.label}</p>{items.map((item) => { const Icon = menuIcons[item.icon as keyof typeof menuIcons] || FileText; return <button key={item.id} className={isMenuActive(item) ? "nav-item active" : "nav-item"} onClick={() => openMenu(item)}><Icon /><span>{item.label}</span>{item.targetId && dashboard && <em>{dashboard.typeCounts.find((count) => count.typeId === item.targetId)?.count || 0}</em>}</button>})}</div> : null })}</nav><button className="sidebar-footer" onClick={() => openView({ kind: "settings" }, "用户设置", "settings")}><div className="avatar">{shell.user.name.slice(0, 1)}</div><div><strong>{shell.user.name}</strong><span>{shell.user.roleName}</span></div><Settings /></button></aside>
-    <main className="main-area"><header className="topbar"><div className="topbar-left"><IconButton aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose /> : <Menu />}</IconButton><div className="breadcrumb"><span>{shell.config.appName}</span><b>/</b><strong>{activeTab.title}</strong></div></div><div className="topbar-actions"><div className="global-search"><Search /><input placeholder="搜索单据、客户、产品..." /><kbd>⌘ K</kbd></div><IconButton className="notification" onClick={() => setNotificationsOpen((value) => !value)} title="通知中心"><Bell />{unreadCount > 0 && <i />}</IconButton><button className="avatar small avatar-button" onClick={() => openView({ kind: "settings" }, "用户设置", "settings")}>{shell.user.name.slice(0, 1)}</button></div></header>
-      <WorkspaceTabs tabs={tabs} activeId={activeId} onActivate={setActiveId} onClose={closeTab} onCloseOthers={closeOthers} onCloseAll={closeAll} onRefresh={refreshTab} />
+    <aside className="sidebar"><div className="brand"><div className="brand-title"><div className="brand-mark"><Boxes size={18} /></div><div><strong>{shell.config.appName}</strong><span>{shell.config.appSubtitle}</span></div></div><IconButton aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <ChevronLeft /> : <ChevronRight />}</IconButton></div><nav>{shell.config.menuGroups.map((group) => { const items = group.items.filter(hasPermission); return items.length ? <div key={group.id}><p className="nav-label">{group.label}</p>{items.map((item) => { const Icon = menuIcons[item.icon as keyof typeof menuIcons] || FileText; return <button key={item.id} className={isMenuActive(item) ? "nav-item active" : "nav-item"} onClick={() => openMenu(item)} title={item.label}><Icon /><span>{item.label}</span>{item.targetId && dashboard && <em>{dashboard.typeCounts.find((count) => count.typeId === item.targetId)?.count || 0}</em>}</button>})}</div> : null })}</nav></aside>
+    <main className="main-area"><WorkspaceTabs tabs={tabs} activeId={activeId} onActivate={setActiveId} onClose={closeTab} onCloseOthers={closeOthers} onCloseAll={closeAll} onRefresh={refreshTab} onMove={moveTab} endActions={<IconButton className="notification" onClick={() => setNotificationsOpen((value) => !value)} title="通知中心"><Bell />{unreadCount > 0 && <i>{unreadCount > 9 ? "9+" : unreadCount}</i>}</IconButton>} />
       <section className="page-content workspace-content">{tabs.map((tab) => <div className="workspace-page" hidden={tab.id !== activeId} key={tab.id}>{renderTab(tab)}</div>)}</section>
       {settings.showGlobalStatusBar && <GlobalStatusBar user={shell.user} tabCount={tabs.length} />}
-    </main>{notificationsOpen && <NotificationCenter notifications={shell.notifications} onClose={() => setNotificationsOpen(false)} onRead={readNotification} onReadAll={readAll} />}
+    </main>{notificationsOpen && <NotificationCenter notifications={shell.notifications} onClose={() => setNotificationsOpen(false)} onRead={readNotification} onReadAll={readAll} />}<ConfirmDialog open={Boolean(discardRequest)} title="放弃未保存的更改" description={discardRequest?.description || ""} confirmLabel="放弃更改" destructive onClose={() => setDiscardRequest(null)} onConfirm={() => { const action = discardRequest?.action; setDiscardRequest(null); action?.() }} />
   </div>
 }

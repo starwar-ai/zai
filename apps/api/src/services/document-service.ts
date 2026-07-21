@@ -29,7 +29,7 @@ function owner(headers: Record<string, string | string[] | undefined>) {
   }
 }
 
-function buildSearchText(code: string, masterData: Record<string, unknown>, detailTables: DetailTableData[]): string {
+export function buildSearchText(code: string, masterData: Record<string, unknown>, detailTables: DetailTableData[]): string {
   const values: string[] = [code]
   const collect = (value: unknown): void => {
     if (value === null || value === undefined) return
@@ -112,7 +112,7 @@ async function nextCode(client: DatabaseClient, typeId: string): Promise<string>
   return `${schema.codePrefix}-${period}-${String(sequence.value).padStart(4, "0")}`
 }
 
-async function createInTransaction(client: Prisma.TransactionClient, input: { typeId: string; masterData?: Record<string, unknown>; detailTables?: DetailTableData[]; source?: DocumentRecord }, creator: { name: string; userId: string; departmentId?: string }): Promise<PrismaDocument> {
+export async function createInTransaction(client: Prisma.TransactionClient, input: { typeId: string; masterData?: Record<string, unknown>; detailTables?: DetailTableData[]; source?: DocumentRecord }, creator: { name: string; userId: string; departmentId?: string }): Promise<PrismaDocument> {
   const schema = getSchema(input.typeId)
   const defaults = Object.fromEntries(schema.masterFields.filter((field) => field.defaultValue !== undefined).map((field) => [field.id, field.defaultValue]))
   const code = await nextCode(client, input.typeId)

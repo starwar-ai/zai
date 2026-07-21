@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react"
-import type { DetailTableData, DocumentRecord, DocumentSchema, FieldEffectDefinition, FieldSchema, FormMode, RowSelectorDefinition } from "@zform/shared"
+import type { DetailTableData, DocumentRecord, DocumentSchema, FieldEffectDefinition, FieldSchema, FormMode, RowSelectorDefinition, ToolbarActionDefinition } from "@zform/shared"
 
 export interface FieldPluginProps {
   field: FieldSchema
@@ -21,6 +21,13 @@ export interface ExtraTabPluginProps {
   params?: Record<string, unknown>
 }
 
+export interface ToolbarActionPluginProps {
+  action: ToolbarActionDefinition
+  schema: DocumentSchema
+  onChanged: () => Promise<void>
+  reload: () => Promise<void>
+}
+
 export interface EffectContext {
   definition: FieldEffectDefinition
   data: Record<string, unknown>
@@ -35,6 +42,7 @@ const fieldPlugins = new Map<string, ComponentType<FieldPluginProps>>()
 const rowSelectorPlugins = new Map<string, ComponentType<RowSelectorPluginProps>>()
 const extraTabPlugins = new Map<string, ComponentType<ExtraTabPluginProps>>()
 const effectHandlers = new Map<string, EffectHandler>()
+const toolbarActionPlugins = new Map<string, ComponentType<ToolbarActionPluginProps>>()
 
 export const pluginRegistry = {
   registerField(type: `custom:${string}`, component: ComponentType<FieldPluginProps>) { fieldPlugins.set(type, component) },
@@ -45,6 +53,8 @@ export const pluginRegistry = {
   getExtraTab(id: string) { return extraTabPlugins.get(id) },
   registerEffect(id: string, handler: EffectHandler) { effectHandlers.set(id, handler) },
   getEffect(id: string) { return effectHandlers.get(id) },
+  registerToolbarAction(id: string, component: ComponentType<ToolbarActionPluginProps>) { toolbarActionPlugins.set(id, component) },
+  getToolbarAction(id: string) { return toolbarActionPlugins.get(id) },
 }
 
 export function renderExtraTab(pluginId: string, props: ExtraTabPluginProps): ReactNode {

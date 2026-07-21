@@ -102,14 +102,14 @@ model UserPreference {
 }
 
 model UserNotification {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.VarChar(64)
-  title      String    @db.VarChar(120)
-  content    String    @db.VarChar(500)
-  level      String    @default("info") @db.VarChar(20)
-  target     Json?     @db.JsonB
-  readAt     DateTime? @map("read_at") @db.Timestamptz(3)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.VarChar(64)
+  title     String    @db.VarChar(120)
+  content   String    @db.VarChar(500)
+  level     String    @default("info") @db.VarChar(20)
+  target    Json?     @db.JsonB
+  readAt    DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([userId, readAt, createdAt])
   @@map("user_notifications")
@@ -131,6 +131,45 @@ model SystemMenu {
 
   @@index([groupId, order])
   @@map("system_menus")
+}
+
+model Department {
+  id        String   @id @default(uuid()) @db.VarChar(64)
+  code      String   @unique @db.VarChar(64)
+  name      String   @db.VarChar(100)
+  parentId  String?  @map("parent_id") @db.VarChar(64)
+  order     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([parentId, order])
+  @@map("departments")
+}
+
+model OcrRecognition {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.VarChar(64)
+  originalFilename String   @map("original_filename") @db.VarChar(255)
+  mimeType         String   @map("mime_type") @db.VarChar(50)
+  imageData        Bytes    @map("image_data")
+  status           String   @default("RECOGNIZING") @db.VarChar(20)
+  platform         String?  @db.VarChar(80)
+  orderNo          String?  @map("order_no") @db.VarChar(160)
+  productName      String?  @map("product_name") @db.VarChar(500)
+  amount           String?  @db.VarChar(80)
+  paymentTime      String?  @map("payment_time") @db.VarChar(100)
+  paymentStatus    String?  @map("payment_status") @db.VarChar(100)
+  paymentMethod    String?  @map("payment_method") @db.VarChar(100)
+  receiver         String?  @db.VarChar(255)
+  rawJson          Json?    @map("raw_json") @db.JsonB
+  model            String?  @db.VarChar(100)
+  errorMessage     String?  @map("error_message") @db.VarChar(1000)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@map("ocr_recognitions")
 }
 
 model Role {
@@ -162,10 +201,10 @@ model AppUser {
 }
 
 model UserRole {
-  userId   String @map("user_id") @db.VarChar(64)
-  roleId   String @map("role_id") @db.Uuid
-  user     AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role     Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  userId String  @map("user_id") @db.VarChar(64)
+  roleId String  @map("role_id") @db.Uuid
+  user   AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([userId, roleId])
   @@index([roleId])
@@ -197,34 +236,34 @@ model DocumentSequence {
 }
 
 model DeclarationNameMapping {
-  id                            String                       @id @default(uuid()) @db.Uuid
-  normalizedName                String                       @map("normalized_name") @db.VarChar(255)
-  normalizedNameEng             String                       @map("normalized_name_eng") @db.VarChar(255)
-  rawName                       String                       @map("raw_name") @db.VarChar(255)
-  rawNameEng                    String                       @map("raw_name_eng") @db.VarChar(255)
-  rowCount                      Int                          @default(0) @map("row_count")
-  existingDeclarationVariants  String?                      @map("existing_declaration_variants")
-  existingEngVariants          String?                      @map("existing_eng_variants")
-  declarationName               String?                      @map("declaration_name") @db.VarChar(100)
-  customsDeclarationNameEng     String?                      @map("customs_declaration_name_eng") @db.VarChar(100)
-  confidence                    Decimal?                     @db.Decimal(4, 3)
-  reviewRequired                Boolean                      @default(true) @map("review_required")
-  reviewReason                  String?                      @map("review_reason") @db.VarChar(500)
-  status                        DeclarationNameMappingStatus @default(PENDING)
-  source                        String                       @default("api") @db.VarChar(50)
-  promptVersion                 String?                      @map("prompt_version") @db.VarChar(50)
-  modelVersion                  String?                      @map("model_version") @db.VarChar(100)
-  approvedBy                    String?                      @map("approved_by") @db.VarChar(100)
-  approvedAt                    DateTime?                    @map("approved_at") @db.Timestamptz(3)
-  rejectedBy                    String?                      @map("rejected_by") @db.VarChar(100)
-  rejectedAt                    DateTime?                    @map("rejected_at") @db.Timestamptz(3)
-  rejectReason                  String?                      @map("reject_reason") @db.VarChar(500)
-  errorMessage                  String?                      @map("error_message")
-  createdAt                     DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt                     DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  jobItems                      DeclarationNameGenerationJobItem[]
-  audits                        DeclarationNameAuditLog[]
-  sourceItems                   DeclarationNameSourceItem[]
+  id                          String                             @id @default(uuid()) @db.Uuid
+  normalizedName              String                             @map("normalized_name") @db.VarChar(255)
+  normalizedNameEng           String                             @map("normalized_name_eng") @db.VarChar(255)
+  rawName                     String                             @map("raw_name") @db.VarChar(255)
+  rawNameEng                  String                             @map("raw_name_eng") @db.VarChar(255)
+  rowCount                    Int                                @default(0) @map("row_count")
+  existingDeclarationVariants String?                            @map("existing_declaration_variants")
+  existingEngVariants         String?                            @map("existing_eng_variants")
+  declarationName             String?                            @map("declaration_name") @db.VarChar(100)
+  customsDeclarationNameEng   String?                            @map("customs_declaration_name_eng") @db.VarChar(100)
+  confidence                  Decimal?                           @db.Decimal(4, 3)
+  reviewRequired              Boolean                            @default(true) @map("review_required")
+  reviewReason                String?                            @map("review_reason") @db.VarChar(500)
+  status                      DeclarationNameMappingStatus       @default(PENDING)
+  source                      String                             @default("api") @db.VarChar(50)
+  promptVersion               String?                            @map("prompt_version") @db.VarChar(50)
+  modelVersion                String?                            @map("model_version") @db.VarChar(100)
+  approvedBy                  String?                            @map("approved_by") @db.VarChar(100)
+  approvedAt                  DateTime?                          @map("approved_at") @db.Timestamptz(3)
+  rejectedBy                  String?                            @map("rejected_by") @db.VarChar(100)
+  rejectedAt                  DateTime?                          @map("rejected_at") @db.Timestamptz(3)
+  rejectReason                String?                            @map("reject_reason") @db.VarChar(500)
+  errorMessage                String?                            @map("error_message")
+  createdAt                   DateTime                           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime                           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  jobItems                    DeclarationNameGenerationJobItem[]
+  audits                      DeclarationNameAuditLog[]
+  sourceItems                 DeclarationNameSourceItem[]
 
   @@unique([normalizedName, normalizedNameEng])
   @@index([status, updatedAt])
@@ -233,34 +272,34 @@ model DeclarationNameMapping {
 }
 
 model DeclarationNameGenerationJob {
-  id            String                   @id @default(uuid()) @db.Uuid
-  status        DeclarationNameJobStatus @default(PENDING)
-  inputCount    Int                      @default(0) @map("input_count")
-  successCount  Int                      @default(0) @map("success_count")
-  failedCount   Int                      @default(0) @map("failed_count")
-  reviewCount   Int                      @default(0) @map("review_count")
-  errorMessage  String?                  @map("error_message")
-  createdBy     String                   @map("created_by") @db.VarChar(64)
-  createdAt     DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
-  startedAt     DateTime?                @map("started_at") @db.Timestamptz(3)
-  finishedAt    DateTime?                @map("finished_at") @db.Timestamptz(3)
-  updatedAt     DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
-  items         DeclarationNameGenerationJobItem[]
+  id           String                             @id @default(uuid()) @db.Uuid
+  status       DeclarationNameJobStatus           @default(PENDING)
+  inputCount   Int                                @default(0) @map("input_count")
+  successCount Int                                @default(0) @map("success_count")
+  failedCount  Int                                @default(0) @map("failed_count")
+  reviewCount  Int                                @default(0) @map("review_count")
+  errorMessage String?                            @map("error_message")
+  createdBy    String                             @map("created_by") @db.VarChar(64)
+  createdAt    DateTime                           @default(now()) @map("created_at") @db.Timestamptz(3)
+  startedAt    DateTime?                          @map("started_at") @db.Timestamptz(3)
+  finishedAt   DateTime?                          @map("finished_at") @db.Timestamptz(3)
+  updatedAt    DateTime                           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  items        DeclarationNameGenerationJobItem[]
 
   @@index([createdBy, createdAt])
   @@map("declaration_name_generation_jobs")
 }
 
 model DeclarationNameGenerationJobItem {
-  id            String                           @id @default(uuid()) @db.Uuid
-  jobId         String                           @map("job_id") @db.Uuid
-  mappingId     String                           @map("mapping_id") @db.Uuid
-  status        DeclarationNameJobItemStatus     @default(PENDING)
-  errorMessage  String?                          @map("error_message")
-  createdAt     DateTime                         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  job           DeclarationNameGenerationJob     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  mapping       DeclarationNameMapping           @relation(fields: [mappingId], references: [id], onDelete: Restrict)
+  id           String                       @id @default(uuid()) @db.Uuid
+  jobId        String                       @map("job_id") @db.Uuid
+  mappingId    String                       @map("mapping_id") @db.Uuid
+  status       DeclarationNameJobItemStatus @default(PENDING)
+  errorMessage String?                      @map("error_message")
+  createdAt    DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  job          DeclarationNameGenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  mapping      DeclarationNameMapping       @relation(fields: [mappingId], references: [id], onDelete: Restrict)
 
   @@unique([jobId, mappingId])
   @@index([jobId, status])
