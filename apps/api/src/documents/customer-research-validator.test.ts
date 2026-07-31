@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest"
-import { customerResearchImportSchema, customerResearchResultSchema } from "./customer-research-validator.js"
+import { customerResearchImportSchema, customerResearchProcessSchema, customerResearchResultSchema } from "./customer-research-validator.js"
 
 describe("customer research validation", () => {
   it("normalizes a valid imported customer", () => {
-    const parsed = customerResearchImportSchema.parse({ fileName: " customers.xlsx ", rows: [{ companyName: " Example Ltd ", country: " UK " }] })
-    expect(parsed).toMatchObject({ fileName: "customers.xlsx", rows: [{ companyName: "Example Ltd", country: "UK" }] })
+    const parsed = customerResearchImportSchema.parse({ fileName: " customers.xlsx ", rows: [{ companyName: " Example Ltd ", country: " UK ", contactEmail: " sales@example.com ", businessAddress: " London Road 1 " }] })
+    expect(parsed).toMatchObject({ fileName: "customers.xlsx", rows: [{ companyName: "Example Ltd", country: "UK", contactEmail: "sales@example.com", businessAddress: "London Road 1" }] })
   })
 
   it("rejects an empty customer name and oversized batches", () => {
     expect(() => customerResearchImportSchema.parse({ fileName: "a.xlsx", rows: [{ companyName: "" }] })).toThrow()
     expect(() => customerResearchImportSchema.parse({ fileName: "a.xlsx", rows: Array.from({ length: 1001 }, () => ({ companyName: "A" })) })).toThrow()
+  })
+
+  it("validates an optional selected provider", () => {
+    expect(customerResearchProcessSchema.parse({ provider: " kimi " })).toEqual({ provider: "kimi" })
+    expect(() => customerResearchProcessSchema.parse({ provider: "" })).toThrow()
   })
 
   it("rejects invalid research decisions and confidence", () => {

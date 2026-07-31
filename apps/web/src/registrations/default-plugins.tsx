@@ -1,9 +1,11 @@
+import { useEffect } from "react"
 import type { ExtraTabPluginProps, RowSelectorPluginProps } from "@/core/plugin-registry"
 import { pluginRegistry } from "@/core/plugin-registry"
 
-function BlankRowSelector({ definition, fields, onSelect }: RowSelectorPluginProps) {
+function BlankRowSelector({ fields, open, onOpenChange, onSelect }: RowSelectorPluginProps) {
   const defaults = Object.fromEntries(fields.filter((field) => field.defaultValue !== undefined).map((field) => [field.id, field.defaultValue]))
-  return <button className="secondary-button small-button" onClick={() => onSelect([defaults])}>+ {definition.buttonLabel || "添加一行"}</button>
+  useEffect(() => { if (open) { onSelect([defaults]); onOpenChange(false) } }, [open])
+  return null
 }
 
 function SchemaInspector({ document, schema }: ExtraTabPluginProps) {

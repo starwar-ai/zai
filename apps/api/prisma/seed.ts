@@ -62,8 +62,8 @@ async function main(): Promise<void> {
     create: { userId: "framework-user", typeId: "*", scope: "ALL" },
   })
   await prisma.userPreference.upsert({
-    where: { userId: "framework-user" }, update: {},
-    create: { userId: "framework-user", settings: { theme: "light", compactMode: false, sidebarCollapsed: false, dashboardWidgetIds: ["metrics", "customer-research-queue", "recent-documents", "business-distribution", "business-flow", "recent-activities"], showGlobalStatusBar: true } },
+    where: { userId: "framework-user" }, update: { settings: { theme: "light", compactMode: false, sidebarCollapsed: false, dashboardWidgetIds: [], showGlobalStatusBar: true } },
+    create: { userId: "framework-user", settings: { theme: "light", compactMode: false, sidebarCollapsed: false, dashboardWidgetIds: [], showGlobalStatusBar: true } },
   })
   const notificationCount = await prisma.userNotification.count({ where: { userId: "framework-user" } })
   if (!notificationCount) await prisma.userNotification.createMany({ data: [
@@ -72,11 +72,7 @@ async function main(): Promise<void> {
   ] })
   const menus = [
     { id: "dashboard", groupId: "workspace", groupLabel: "工作空间", label: "工作台", icon: "LayoutDashboard", target: "dashboard", permissionCode: "dashboard:view", order: 10 },
-    { id: "document:quotation", groupId: "documents", groupLabel: "业务单据", label: "客户报价单", icon: "FileText", target: "document-list", targetId: "quotation", permissionCode: "document:quotation:view", order: 20 },
-    { id: "document:sales_contract", groupId: "documents", groupLabel: "业务单据", label: "销售合同", icon: "PackageOpen", target: "document-list", targetId: "sales_contract", permissionCode: "document:sales_contract:view", order: 30 },
-    { id: "document:purchase_plan", groupId: "documents", groupLabel: "业务单据", label: "采购计划", icon: "ShoppingCart", target: "document-list", targetId: "purchase_plan", permissionCode: "document:purchase_plan:view", order: 40 },
-    { id: "document:warehouse_inbound", groupId: "documents", groupLabel: "业务单据", label: "入库单", icon: "Warehouse", target: "document-list", targetId: "warehouse_inbound", permissionCode: "document:warehouse_inbound:view", order: 50 },
-    { id: "document:customer_due_diligence", groupId: "documents", groupLabel: "业务单据", label: "客户背景调查", icon: "SearchCheck", target: "document-list", targetId: "customer_due_diligence", permissionCode: "document:customer_due_diligence:view", order: 55 },
+    { id: "document:customer_due_diligence", groupId: "tools", groupLabel: "智能工具", label: "客户背景调查", icon: "SearchCheck", target: "document-list", targetId: "customer_due_diligence", permissionCode: "document:customer_due_diligence:view", order: 55 },
     { id: "declaration-name", groupId: "tools", groupLabel: "智能工具", label: "报关名称审核", icon: "Languages", target: "declaration-name", permissionCode: "declaration-name:view", order: 60 },
     { id: "ocr:recognition", groupId: "tools", groupLabel: "智能工具", label: "支付截图识别", icon: "ScanLine", target: "ocr-recognition", permissionCode: "ocr:view", order: 65 },
     { id: "system:menus", groupId: "system", groupLabel: "系统管理", label: "菜单管理", icon: "MenuSquare", target: "menu-management", permissionCode: "system:menu:manage", order: 70 },
@@ -86,6 +82,7 @@ async function main(): Promise<void> {
     { id: "settings", groupId: "system", groupLabel: "系统管理", label: "用户设置", icon: "Settings", target: "settings", permissionCode: "settings:use", order: 110 },
     { id: "help", groupId: "system", groupLabel: "系统管理", label: "使用帮助", icon: "CircleHelp", target: "help", order: 120 },
   ]
+  await prisma.systemMenu.deleteMany({ where: { groupId: "documents" } })
   for (const menu of menus) await prisma.systemMenu.upsert({ where: { id: menu.id }, update: menu, create: menu })
   const adminRole = await prisma.role.upsert({ where: { code: "SYSTEM_ADMIN" }, update: { name: "系统管理员", permissions: ["*"] }, create: { code: "SYSTEM_ADMIN", name: "系统管理员", description: "拥有 framework 全部管理和业务权限", permissions: ["*"] } })
   await prisma.role.upsert({ where: { code: "BUSINESS_VIEWER" }, update: {}, create: { code: "BUSINESS_VIEWER", name: "业务查看员", description: "可查看工作台与业务单据", permissions: ["dashboard:view", "document:quotation:view", "document:sales_contract:view", "document:purchase_plan:view", "document:warehouse_inbound:view", "settings:use"] } })

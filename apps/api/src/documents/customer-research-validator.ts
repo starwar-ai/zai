@@ -7,10 +7,12 @@ export const customerResearchImportSchema: z.ZodType<CustomerResearchImportReque
   rows: z.array(z.object({
     companyName: z.string().trim().min(1).max(255),
     country: nullableText(120), website: nullableText(500), contactName: nullableText(255),
-    contactEmail: nullableText(320), contactPhone: nullableText(120),
+    contactEmail: nullableText(320), contactPhone: nullableText(120), businessAddress: nullableText(1000),
     rawData: z.record(z.union([z.string().max(5000), z.number().finite(), z.boolean(), z.null()])).optional(),
   }).strict()).min(1).max(1000),
 }).strict()
+
+export const customerResearchProcessSchema = z.object({ provider: z.string().trim().min(1).max(50).optional() }).strict()
 
 const decision = z.enum(["yes", "no", "uncertain"])
 const confidence = z.number().int().min(0).max(100)

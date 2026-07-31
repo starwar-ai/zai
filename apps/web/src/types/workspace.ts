@@ -2,7 +2,8 @@
 export type WorkspaceView =
   | { kind: "dashboard" }
   | { kind: "list"; typeId: string }
-  | { kind: "editor"; id: string; returnTypeId: string }
+  | { kind: "editor"; id: string; returnTypeId: string; highlightedRowId?: string }
+  | { kind: "draft"; typeId: string; sourceId?: string }
   | { kind: "settings" }
   | { kind: "help" }
   | { kind: "system"; entity: "menus" | "users" | "roles" | "departments" }

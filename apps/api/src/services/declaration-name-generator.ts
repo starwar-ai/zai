@@ -1,8 +1,7 @@
 import { z } from "zod"
 import type { GeneratedDeclarationName } from "@zform/shared"
+import { configuredLlmProviders, numberFromEnv, type LlmProviderConfig } from "./llm-provider-config.js"
 
-type ProviderMode = "responses" | "chat-json-schema" | "anthropic-json-prompt"
-interface ProviderConfig { provider: string; apiKey: string; model: string; baseUrl: string; mode: ProviderMode; temperature: number }
 
 const generatedSchema = z.object({
   declarationName: z.string().trim().min(1).max(100),
@@ -24,20 +23,6 @@ export const declarationNameJsonSchema = {
 export const declarationNameSystemPrompt = `你是跨境电商和外贸报关品名标准化助手。根据中文销售名、英文销售名和历史候选输出统一的中英文报关品名。
 规则：输出品类名而非完整销售标题；删除尺寸、容量、电压、功率、颜色、包装数量、营销词、型号、FSC、用途 和规格参数；保留核心品类和必要材质；中文尽量7个字以内；英文全大写且尽量为 2-5 个词；输入冲突、历史候选冲突或疑似公司与品牌名时要求人工复核；不输出 HS Code 或解释性长句。`
 
-function numberFromEnv(name: string, fallback: number): number {
-  const value = Number(process.env[name])
-  return Number.isFinite(value) ? value : fallback
-}
-
-function providers(): ProviderConfig[] {
-  const configs: Record<string, ProviderConfig> = {
-    openai: { provider: "openai", apiKey: process.env.OPENAI_API_KEY || "", model: process.env.OPENAI_MODEL || "gpt-4.1", baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1", mode: "responses", temperature: 0 },
-    kimi: { provider: "kimi", apiKey: process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || "", model: process.env.KIMI_MODEL || process.env.MOONSHOT_MODEL || "kimi-k2-0711-preview", baseUrl: process.env.KIMI_BASE_URL || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.cn/v1", mode: "chat-json-schema", temperature: numberFromEnv("KIMI_TEMPERATURE", 1) },
-    minimax: { provider: "minimax", apiKey: process.env.MINIMAX_API_KEY || "", model: process.env.MINIMAX_MODEL || "MiniMax-M2.7", baseUrl: process.env.MINIMAX_BASE_URL || "https://api.minimax.io/anthropic", mode: "anthropic-json-prompt", temperature: numberFromEnv("MINIMAX_TEMPERATURE", 0.1) },
-  }
-  return (process.env.LLM_PROVIDER_ORDER || "openai").split(",").map((name) => configs[name.trim().toLowerCase()]).filter((item): item is ProviderConfig => Boolean(item))
-}
-
 function extractJson(output: string): unknown {
   const fenced = output.trim().match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim() || output.trim()
   const start = fenced.indexOf("{")
@@ -52,7 +37,7 @@ function responseOutput(body: unknown): string {
   return parsed.data.output_text || parsed.data.output?.flatMap((item) => item.content || []).find((item) => item.text)?.text || ""
 }
 
-async function providerRequest(provider: ProviderConfig, input: Record<string, unknown>): Promise<GeneratedDeclarationName> {
+async function providerRequest(provider: LlmProviderConfig, input: Record<string, unknown>): Promise<GeneratedDeclarationName> {
   const baseUrl = provider.baseUrl.replace(/\/$/, "")
   let endpoint = `${baseUrl}/responses`
   let headers: Record<string, string> = { "content-type": "application/json", authorization: `Bearer ${provider.apiKey}` }
@@ -85,7 +70,7 @@ async function providerRequest(provider: ProviderConfig, input: Record<string, u
 
 export async function generateDeclarationName(input: { name: string; nameEng: string; existingDeclarationVariants?: string; existingEngVariants?: string; rowCount?: number }): Promise<GeneratedDeclarationName> {
   const errors: string[] = []
-  for (const provider of providers()) {
+  for (const provider of configuredLlmProviders()) {
     if (!provider.apiKey) { errors.push(`${provider.provider}: 未配置 API Key`); continue }
     try { return await providerRequest(provider, input) }
     catch (error) { errors.push(`${provider.provider}: ${error instanceof Error ? error.message : String(error)}`) }

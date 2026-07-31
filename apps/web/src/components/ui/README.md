@@ -30,12 +30,13 @@ export function ExamplePage() {
 - `Progress`、`Separator`：进度反馈与内容分隔
 - `Table` 系列：简单语义数据表格
 - `Pagination`：服务端分页、每页条数与首页/末页控制
-- `ColumnSettings`：复杂列表的列显示、顺序和左右分组设置
+- `ColumnSettings`：复杂列表的列显示、拖拽/按钮排序和左右固定设置
 - `cn`：过滤并拼接 className
 
 ## 使用边界
 
-- 复杂单据列表使用 `DocumentList` 和 `/api/documents/query`，不要用基础 `Table` 重写分页、权限、过滤和聚合。
+- 复杂单据列表使用 `DocumentList` 和 `/api/documents/query`；其列筛选、服务端分页/排序、列宽、列序、固定列、跨页选择和导出能力统一在列表组件内实现。
+- 单据明细编辑使用 `DocumentDetailTable`，字段仍由 `FieldRenderer` 渲染；列宽、列序和行序偏好由表格统一维护。
 - Schema 字段使用 `FieldRenderer`；基础表单或配置页才直接组合 Input/Select 等组件。
 - 多标签工作区使用 `WorkspaceTabs`，页面内部局部切换使用 `Tabs`。
 - 业务确认使用 `ConfirmDialog`，不要新增 `window.confirm`。

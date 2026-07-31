@@ -7,7 +7,7 @@
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @zform/api\" \"npm run dev -w @zform/web\"",
     "build": "npm run build -w @zform/shared && npm run build -w @zform/api && npm run build -w @zform/web",
     "typecheck": "npm run build -w @zform/shared && npm run typecheck -w @zform/api && npm run typecheck -w @zform/web",
-    "test": "npm run test -w @zform/shared && npm run test -w @zform/api",
+    "test": "npm run test -w @zform/shared && npm run test -w @zform/api && npm run test -w @zform/web",
     "start": "npm run start -w @zform/api",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",

@@ -89,7 +89,7 @@ Compose 将 PostgreSQL 映射到本机 `5433` 端口，数据保存在具名卷 
 - PostgreSQL 持久化：主数据和明细使用 JSONB，状态、来源、版本和审计信息使用强类型列
 - 事务安全：单号生成、状态流转、审计记录和下推操作在数据库事务中提交
 - 报关名称标准化：按 `name + nameEng` 归一化去重，支持多模型故障切换、结构化输出、强制复核规则、人工审核、来源明细回写和独立审计日志
-- 客户背景调查：通过 Schema 单据承载客户资料、四项判定、可信度和公开来源，支持 Excel 批量去重导入、权限内队列领取、联网调查、失败重试、工作台进度和报告 Tab；直接复用 `apps/api/.env` 中已有的 `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL`、`LLM_TIMEOUT_MS` 和 `PROMPT_VERSION` 配置
+- 客户背景调查：通过 Schema 单据承载客户资料、四项判定、可信度和公开来源，支持 Excel 批量去重导入、权限内队列领取、按 `LLM_PROVIDER_ORDER` 选择供应商与模型立即调查、模型返回实时展示、多次调查历史留档及作为后续调查上下文、失败重试、工作台进度和报告 Tab；复用 OpenAI、Kimi、MiniMax 的现有模型配置
 - 支付截图 OCR：在 ZAI 外壳中提供批量拖拽上传、OpenAI 视觉结构化识别、个人历史、原图详情、删除与 Excel 导出；图片与结果保存在 PostgreSQL，并按当前用户隔离
 
 ## 常用命令
@@ -129,8 +129,11 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | GET | `/api/documents` | 按类型、状态、关键词查询 |
 | POST | `/api/documents/query` | 通用列表分页、过滤、排序、聚合和数据权限查询 |
 | GET | `/api/customer-research/summary` | 查询当前权限范围内的客户调查队列摘要 |
+| GET | `/api/customer-research/models` | 查询允许用于客户调查的模型白名单 |
 | POST | `/api/customer-research/import` | 批量导入并去重客户调查单 |
 | POST | `/api/customer-research/process-next` | 原子领取并调查下一位客户 |
+| POST | `/api/customer-research/:id/process` | 使用请求体中的可选 `provider` 立即调查指定客户 |
+| POST | `/api/customer-research/:id/process-stream` | 以 NDJSON 事件流实时调查指定客户 |
 | POST | `/api/customer-research/:id/retry` | 将失败调查重新加入队列 |
 | POST | `/api/ocr/recognitions` | 上传支付截图并识别结构化支付信息 |
 | GET | `/api/ocr/recognitions` | 分页查询当前用户的识别历史 |
@@ -266,6 +269,9 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `CORS_ORIGIN`：允许的管理端来源，默认 `http://localhost:5174`
 - `DATABASE_URL`：PostgreSQL 连接串
 - `LLM_PROVIDER_ORDER`：模型调用顺序，默认 `openai`，可配置 `openai,kimi,minimax`
+- `CUSTOMER_RESEARCH_TIMEOUT_MS`：单次客户背景调查超时，默认 `300000`（5 分钟），独立于普通模型调用超时
+- `TAVILY_API_KEY`：客户背景调查的实时联网搜索密钥；所有模型统一使用 Tavily 返回的证据
+- `TAVILY_SEARCH_DEPTH` / `TAVILY_MAX_RESULTS` / `TAVILY_TIMEOUT_MS`：搜索深度、单个关键词结果数和单次搜索超时，默认 `basic`、`5`、`30000`
 - `OPENAI_API_KEY` / `OPENAI_MODEL`：OpenAI Responses API 配置
 - `OCR_MODEL`：支付截图视觉识别模型；未配置时依次回退到 `OPENAI_MODEL` 和 `gpt-4.1-mini`
 - `KIMI_API_KEY` / `KIMI_MODEL` / `KIMI_BASE_URL`：Kimi OpenAI-compatible 配置
@@ -275,6 +281,10 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `EXTERNAL_API_KEYS`：外部转换接口密钥，多个密钥以英文逗号分隔；未配置时接口返回 503
 
 前端可通过 `VITE_API_BASE` 指向独立部署的 API；开发模式默认使用 Vite 代理。
+
+客户背景调查会先通过 Tavily 执行公司注册、规模和园林户外业务三组实时搜索，在调查窗口持续显示关键词及命中链接，再把证据交给 `LLM_PROVIDER_ORDER` 中本次选择的模型。流式接口每 15 秒发送状态心跳，模型来源字段只保留 Tavily 本次实际返回的 URL；每次成功或失败的调查仍独立保存到“调查历史”。
+
+调查窗口、网络或 API 进程意外中断后，可在“调查中”记录上点击“中断并重新加入”，将客户安全恢复为“等待调查”。每次调查使用单据版本作为运行租约；旧请求即使稍后返回，也不能覆盖重新启动后的调查结果。
 
 生产环境执行 `npm run build && npm run start` 后，可直接通过 `http://localhost:3100` 访问完整应用。
 

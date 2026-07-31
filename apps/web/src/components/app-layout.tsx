@@ -48,10 +48,11 @@ export function AppLayout() {
   const activeTab = tabs.find((tab) => tab.id === activeId) || tabs[0] || dashboardTab
   const unreadCount = shell?.notifications.filter((item) => !item.readAt).length || 0
   const hasPermission = useCallback((item: ShellMenuItem) => !item.requiredPermissions?.length || shell?.user.permissions.includes("*") || item.requiredPermissions.every((permission) => shell?.user.permissions.includes(permission)), [shell?.user.permissions])
-  const activateOrAdd = useCallback((tab: WorkspaceTab) => { setTabs((current) => current.some((item) => item.id === tab.id) ? current : [...current, tab]); setActiveId(tab.id) }, [])
+  const activateOrAdd = useCallback((tab: WorkspaceTab) => { setTabs((current) => current.some((item) => item.id === tab.id) ? current.map((item) => item.id === tab.id ? { ...item, view: tab.view, title: tab.title } : item) : [...current, tab]); setActiveId(tab.id) }, [])
   const openView = useCallback((view: WorkspaceView, title: string, id: string, closable = true) => activateOrAdd({ id, title, view, closable, revision: 0 }), [activateOrAdd])
   const openList = useCallback((typeId?: string) => { const schema = schemas.find((item) => item.typeId === typeId); if (schema) openView({ kind: "list", typeId: schema.typeId }, schema.typeName, `list:${schema.typeId}`) }, [openView, schemas])
-  const openDocument = useCallback((document: DocumentRecord) => openView({ kind: "editor", id: document.id, returnTypeId: document.typeId }, document.code, `editor:${document.id}`), [openView])
+  const openDocument = useCallback((document: DocumentRecord, highlightedRowId?: string) => openView({ kind: "editor", id: document.id, returnTypeId: document.typeId, highlightedRowId }, document.code, `editor:${document.id}`), [openView])
+  const openDraft = useCallback((typeId: string, sourceId?: string) => { const schema = schemas.find((item) => item.typeId === typeId); if (!schema) return; const id = `draft:${crypto.randomUUID()}`; openView({ kind: "draft", typeId, sourceId }, sourceId ? `复制${schema.typeName}` : `新建${schema.typeName}`, id) }, [openView, schemas])
   const requestDiscard = (targets: WorkspaceTab[], action: () => void) => {
     const dirty = targets.filter((tab) => tab.dirty)
     if (!dirty.length) { action(); return }
@@ -71,7 +72,14 @@ export function AppLayout() {
   }
   const refreshTab = (id: string) => {
     const tab = tabs.find((item) => item.id === id); if (!tab) return
-    requestDiscard([tab], () => setTabs((current) => current.map((item) => item.id === id ? { ...item, dirty: false, revision: item.revision + 1 } : item)))
+    requestDiscard([tab], () => {
+      void api.schemas()
+        .then((schemaData) => {
+          setSchemas(schemaData)
+          setTabs((current) => current.map((item) => item.id === id ? { ...item, dirty: false, revision: item.revision + 1 } : item))
+        })
+        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "刷新 Schema 失败"))
+    })
   }
   const moveTab = (sourceId: string, targetId: string) => setTabs((current) => { const sourceIndex = current.findIndex((tab) => tab.id === sourceId); const targetIndex = current.findIndex((tab) => tab.id === targetId); if (sourceIndex <= 0 || targetIndex <= 0) return current; const next = [...current]; const [source] = next.splice(sourceIndex, 1); if (!source) return current; next.splice(targetIndex, 0, source); return next })
   const setDirty = useCallback((id: string, dirty: boolean) => setTabs((current) => {
@@ -93,7 +101,7 @@ export function AppLayout() {
   }
   const isMenuActive = (item: ShellMenuItem) => {
     if (item.target === "dashboard") return activeTab.view.kind === "dashboard"
-    if (item.target === "document-list") return (activeTab.view.kind === "list" && activeTab.view.typeId === item.targetId) || (activeTab.view.kind === "editor" && activeTab.view.returnTypeId === item.targetId)
+    if (item.target === "document-list") return (activeTab.view.kind === "list" && activeTab.view.typeId === item.targetId) || (activeTab.view.kind === "editor" && activeTab.view.returnTypeId === item.targetId) || (activeTab.view.kind === "draft" && activeTab.view.typeId === item.targetId)
     if (item.target === "menu-management") return activeTab.view.kind === "system" && activeTab.view.entity === "menus"
     if (item.target === "department-management") return activeTab.view.kind === "system" && activeTab.view.entity === "departments"
     if (item.target === "user-management") return activeTab.view.kind === "system" && activeTab.view.entity === "users"
@@ -114,8 +122,9 @@ export function AppLayout() {
   const renderTab = (tab: WorkspaceTab) => {
     const view = tab.view
     if (view.kind === "dashboard") return dashboard && <Dashboard key={tab.revision} data={dashboard} schemas={schemas} visibleWidgets={settings?.dashboardWidgetIds || []} onOpenDocument={openDocument} onOpenList={openList} />
-    if (view.kind === "list") return <DocumentList key={tab.revision} schema={schemas.find((schema) => schema.typeId === view.typeId)!} onOpen={openDocument} onChanged={refreshDashboard} />
-    if (view.kind === "editor") return <DocumentEditor key={tab.revision} documentId={view.id} schemas={schemas} onDirtyChange={(dirty) => setDirty(tab.id, dirty)} onBack={() => closeTab(tab.id, () => openList(view.returnTypeId))} onOpen={openDocument} onChanged={refreshDashboard} />
+    if (view.kind === "list") return <DocumentList key={tab.revision} schema={schemas.find((schema) => schema.typeId === view.typeId)!} onOpen={openDocument} onCreate={() => openDraft(view.typeId)} onCopy={(sourceId) => openDraft(view.typeId, sourceId)} onChanged={refreshDashboard} />
+    if (view.kind === "editor") return <DocumentEditor key={tab.revision} documentId={view.id} highlightedRowId={view.highlightedRowId} schemas={schemas} onDirtyChange={(dirty) => setDirty(tab.id, dirty)} onBack={() => closeTab(tab.id, () => openList(view.returnTypeId))} onOpen={openDocument} onOpenSource={openDocument} onCreated={openDocument} onChanged={refreshDashboard} />
+    if (view.kind === "draft") return <DocumentEditor key={tab.revision} draft={{ typeId: view.typeId, sourceId: view.sourceId }} schemas={schemas} onDirtyChange={(dirty) => setDirty(tab.id, dirty)} onBack={() => closeTab(tab.id, () => openList(view.typeId))} onOpen={openDocument} onOpenSource={openDocument} onCreated={(document) => { setTabs((current) => current.filter((item) => item.id !== tab.id)); openDocument(document) }} onChanged={refreshDashboard} />
     if (view.kind === "settings" && shell && settings) return <UserSettings config={shell.config} settings={settings} onChange={setSettings} onSave={saveUserSettings} />
     if (view.kind === "system") return <SystemManagement entity={view.entity} onShellChanged={async () => { const next = await api.shell(); setShell(next) }} />
     if (view.kind === "declaration-name") return <DeclarationNameReview key={tab.revision} />

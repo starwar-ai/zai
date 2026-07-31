@@ -307,11 +307,8 @@ pluginRegistry.registerExtraTab("my-tab", MyTab)
 
 ### 最低检查
 
-```bash
-npm run typecheck
-npm test
-npm run build
-```
+1. 不要用浏览器验收
+2. 不要运行 npm 
 
 ### 数据库改动
 

@@ -39,7 +39,8 @@ const commonFormActions: FormActionDefinition[] = [
 
 const commonListActions: ListActionDefinition[] = [
   { id: "open", label: "打开", command: "open" },
-  { id: "copy", label: "复制编号", command: "copy" },
+  { id: "copy-document", label: "复制单据", command: "copyDocument" },
+  { id: "copy-code", label: "复制编号", command: "copy" },
   { id: "delete", label: "删除", command: "delete", allowedStatuses: ["DRAFT"], variant: "danger" },
 ]
 
@@ -96,13 +97,21 @@ export const schemas: DocumentSchema[] = [
       ],
       defaultSorting: [{ columnId: "updatedAt", direction: "desc" }],
       aggregates: [{ id: "row-count", label: "客户数", columnId: "code", function: "count" }],
-      rowActions: [{ id: "open", label: "查看", command: "open" }],
+      rowActions: [
+        { id: "open", label: "查看", command: "open" },
+        { id: "research-now", label: "立即调查", command: "custom:customer-research-now", allowedStatuses: ["DRAFT", "COMPLETED"], variant: "success" },
+        { id: "research-retry", label: "中断并重新加入", command: "custom:customer-research-retry", allowedStatuses: ["IN_PROGRESS"] },
+        { id: "research-retry-failed", label: "重新加入", command: "custom:customer-research-retry", allowedStatuses: ["REJECTED"] },
+      ],
       toolbarActions: [
         { id: "import", label: "导入客户", command: "custom:customer-research-import", variant: "primary", modes: ["document"] },
         { id: "export", label: "导出当前结果", command: "export" },
       ],
     },
-    extraTabs: [{ id: "research-report", label: "调查报告", pluginId: "customer-research-report" }],
+    extraTabs: [
+      { id: "research-report", label: "调查报告", pluginId: "customer-research-report" },
+      { id: "research-history", label: "调查历史", pluginId: "customer-research-history" },
+    ],
     masterFields: [
       statusField,
       { id: "companyName", label: "公司名称", type: "text", required: true, group: "客户资料", span: 2 },
@@ -111,6 +120,7 @@ export const schemas: DocumentSchema[] = [
       { id: "contactName", label: "联系人", type: "text", group: "客户资料" },
       { id: "contactEmail", label: "联系邮箱", type: "text", group: "客户资料" },
       { id: "contactPhone", label: "联系电话", type: "text", group: "客户资料" },
+      { id: "businessAddress", label: "营业地址", type: "textarea", group: "客户资料", span: 2 },
       { id: "importFileName", label: "导入文件", type: "text", readOnly: true, group: "客户资料" },
       { id: "customerFingerprint", label: "客户指纹", type: "text", readOnly: true, group: "运行信息" },
       { id: "companySummary", label: "公司简介", type: "textarea", readOnly: true, group: "调查概况", span: 2 },
@@ -130,11 +140,24 @@ export const schemas: DocumentSchema[] = [
       { id: "promptVersion", label: "提示词版本", type: "text", readOnly: true, group: "运行信息" },
       { id: "modelVersion", label: "模型版本", type: "text", readOnly: true, group: "运行信息" },
     ],
-    detailTables: [{ id: "sources", label: "公开信息来源", maxRows: 100, readOnly: true, visibleWhen: { field: "status", operator: "eq", value: "COMPLETED" }, fields: [
-      { id: "title", label: "来源标题", type: "text", required: true, readOnly: true },
-      { id: "url", label: "来源链接", type: "text", required: true, readOnly: true },
-      { id: "claim", label: "支持的结论", type: "textarea", required: true, readOnly: true },
-    ] }],
+    detailTables: [
+      { id: "sources", label: "公开信息来源", maxRows: 100, readOnly: true, visibleWhen: { field: "status", operator: "eq", value: "COMPLETED" }, fields: [
+        { id: "title", label: "来源标题", type: "text", required: true, readOnly: true },
+        { id: "url", label: "来源链接", type: "text", required: true, readOnly: true },
+        { id: "claim", label: "支持的结论", type: "textarea", required: true, readOnly: true },
+      ] },
+      { id: "researchRuns", label: "历次调查记录", maxRows: 1000, readOnly: true, fields: [
+        { id: "runNumber", label: "次数", type: "number", readOnly: true },
+        { id: "status", label: "结果状态", type: "text", readOnly: true },
+        { id: "provider", label: "供应商", type: "text", readOnly: true },
+        { id: "model", label: "模型", type: "text", readOnly: true },
+        { id: "completedAt", label: "完成时间", type: "text", readOnly: true },
+        { id: "companySummary", label: "公司简介", type: "textarea", readOnly: true },
+        { id: "overallConfidence", label: "综合可信度", type: "number", readOnly: true },
+        { id: "resultJson", label: "完整调查结果", type: "textarea", readOnly: true },
+        { id: "errorMessage", label: "失败原因", type: "textarea", readOnly: true },
+      ] },
+    ],
   },
   {
     typeId: "quotation",

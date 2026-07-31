@@ -1,4 +1,4 @@
-import type { ActivityRecord, ApiEnvelope, CustomerResearchImportRequest, CustomerResearchImportResult, CustomerResearchProcessResult, CustomerResearchQueueSummary, DashboardData, DeclarationNameApproveRequest, DeclarationNameInput, DeclarationNameJob, DeclarationNameMapping, DeclarationNameRejectRequest, DeclarationNameResolveRequest, DeclarationNameResolveResult, DeclarationNameWritebackRequest, DeclarationNameWritebackResult, DepartmentInput, DepartmentRecord, DocumentAction, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, DocumentUpdateRequest, ImpactAssessment, ListResponse, OcrExportRequest, OcrExportResult, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognizeRequest, OcrRecognizeResult, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
+import type { ActivityRecord, ApiEnvelope, CustomerResearchImportRequest, CustomerResearchImportResult, CustomerResearchModelConfig, CustomerResearchProcessRequest, CustomerResearchProcessResult, CustomerResearchQueueSummary, DashboardData, DeclarationNameApproveRequest, DeclarationNameInput, DeclarationNameJob, DeclarationNameMapping, DeclarationNameRejectRequest, DeclarationNameResolveRequest, DeclarationNameResolveResult, DeclarationNameWritebackRequest, DeclarationNameWritebackResult, DepartmentInput, DepartmentRecord, DocumentAction, DocumentCreateRequest, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, DocumentUpdateRequest, ImpactAssessment, ListResponse, OcrExportRequest, OcrExportResult, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognizeRequest, OcrRecognizeResult, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
 
 // Framework API 的唯一前端入口，组件中不要散落原始 fetch。
 
@@ -19,6 +19,29 @@ async function requestBlob(path: string): Promise<Blob> {
   const response = await fetch(`${apiBase}${path}`, { headers: identityHeaders })
   if (!response.ok) { const body = await response.json() as ApiEnvelope<unknown>; throw new Error(body.message || "请求失败") }
   return response.blob()
+}
+
+export type CustomerResearchStreamEvent = { type: "status"; message: string } | { type: "delta"; kind: "search" | "content" | "reasoning"; delta: string } | { type: "complete"; documentId?: string } | { type: "error"; message: string }
+async function requestCustomerResearchStream(id: string, input: CustomerResearchProcessRequest, onEvent: (event: CustomerResearchStreamEvent) => void): Promise<void> {
+  const response = await fetch(`${apiBase}/api/customer-research/${id}/process-stream`, { method: "POST", headers: { "Content-Type": "application/json", ...identityHeaders }, body: JSON.stringify(input) })
+  if (!response.ok || !response.body) throw new Error(`无法启动流式调查（HTTP ${response.status}）`)
+  const reader = response.body.getReader(); const decoder = new TextDecoder()
+  let buffer = ""; let errorMessage = ""
+  const consume = (line: string) => {
+    if (!line.trim()) return
+    const event = JSON.parse(line) as CustomerResearchStreamEvent
+    onEvent(event)
+    if (event.type === "error") errorMessage = event.message
+  }
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const lines = buffer.split(/\r?\n/); buffer = lines.pop() || ""
+    lines.forEach(consume)
+    if (done) break
+  }
+  if (buffer.trim()) consume(buffer)
+  if (errorMessage) throw new Error(errorMessage)
 }
 
 export const api = {
@@ -57,14 +80,17 @@ export const api = {
   activities: (documentId: string) => request<ActivityRecord[]>(`/api/activities?documentId=${documentId}`),
   trace: (documentId: string) => request<TraceGraph>(`/api/documents/${documentId}/trace`),
   impact: (documentId: string, masterData: Record<string, unknown>) => request<ImpactAssessment>(`/api/documents/${documentId}/impact`, { method: "POST", body: JSON.stringify({ masterData }) }),
-  create: (typeId: string) => request<DocumentRecord>("/api/documents", { method: "POST", body: JSON.stringify({ typeId }) }),
+  create: (input: DocumentCreateRequest) => request<DocumentRecord>("/api/documents", { method: "POST", body: JSON.stringify(input) }),
   update: (id: string, input: DocumentUpdateRequest) => request<DocumentRecord>(`/api/documents/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   action: (id: string, action: DocumentAction, comment?: string) => request<DocumentRecord>(`/api/documents/${id}/actions/${action}`, { method: "POST", body: JSON.stringify({ comment }) }),
   pushDown: (id: string, targetTypeId: string) => request<DocumentRecord>(`/api/documents/${id}/push-down`, { method: "POST", body: JSON.stringify({ targetTypeId }) }),
   remove: (id: string) => request<null>(`/api/documents/${id}`, { method: "DELETE" }),
   customerResearchSummary: () => request<CustomerResearchQueueSummary>("/api/customer-research/summary"),
+  customerResearchModels: () => request<CustomerResearchModelConfig>("/api/customer-research/models"),
   importCustomerResearch: (input: CustomerResearchImportRequest) => request<CustomerResearchImportResult>("/api/customer-research/import", { method: "POST", body: JSON.stringify(input) }),
   processNextCustomerResearch: () => request<CustomerResearchProcessResult>("/api/customer-research/process-next", { method: "POST" }),
+  processCustomerResearch: (id: string, input: CustomerResearchProcessRequest) => request<CustomerResearchProcessResult>(`/api/customer-research/${id}/process`, { method: "POST", body: JSON.stringify(input) }),
+  streamCustomerResearch: requestCustomerResearchStream,
   retryCustomerResearch: (id: string) => request<DocumentRecord>(`/api/customer-research/${id}/retry`, { method: "POST" }),
   resolveDeclarationNames: (input: DeclarationNameResolveRequest) => request<DeclarationNameResolveResult>("/api/declaration-names/resolve", { method: "POST", body: JSON.stringify(input) }),
   generateDeclarationNames: (items: DeclarationNameInput[]) => request<{ jobId: string; inputCount: number }>("/api/declaration-names/generate", { method: "POST", body: JSON.stringify({ items }) }),

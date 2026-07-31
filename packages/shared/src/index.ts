@@ -101,7 +101,7 @@ export interface FormActionDefinition {
 export interface ListActionDefinition {
   id: string
   label: string
-  command: "open" | "delete" | "copy" | `custom:${string}`
+  command: "open" | "delete" | "copy" | "copyDocument" | `custom:${string}`
   allowedStatuses?: DocumentStatus[]
   variant?: ActionVariant
 }
@@ -501,10 +501,14 @@ export interface CustomerResearchImportRow {
   contactName?: string | null
   contactEmail?: string | null
   contactPhone?: string | null
+  businessAddress?: string | null
   rawData?: Record<string, string | number | boolean | null>
 }
 export interface CustomerResearchImportRequest { fileName: string; rows: CustomerResearchImportRow[] }
-export interface CustomerResearchImportResult { totalRows: number; importedRows: number; skippedRows: number; documentIds: string[] }
+export interface CustomerResearchImportResult { totalRows: number; importedRows: number; updatedRows: number; skippedRows: number; documentIds: string[] }
+export interface CustomerResearchModelOption { provider: string; model: string; label: string }
+export interface CustomerResearchModelConfig { defaultProvider: string; options: CustomerResearchModelOption[] }
+export interface CustomerResearchProcessRequest { provider?: string }
 export interface CustomerResearchSource { title: string; url: string; claim: string }
 export interface CustomerResearchResult {
   companySummary: string

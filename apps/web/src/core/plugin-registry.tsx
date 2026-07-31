@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react"
-import type { DetailTableData, DocumentRecord, DocumentSchema, FieldEffectDefinition, FieldSchema, FormMode, RowSelectorDefinition, ToolbarActionDefinition } from "@zform/shared"
+import type { DetailTableData, DocumentListRow, DocumentRecord, DocumentSchema, FieldEffectDefinition, FieldSchema, FormActionDefinition, FormMode, ListActionDefinition, RowSelectorDefinition, ToolbarActionDefinition } from "@zform/shared"
 
 export interface FieldPluginProps {
   field: FieldSchema
@@ -12,6 +12,8 @@ export interface FieldPluginProps {
 export interface RowSelectorPluginProps {
   definition: RowSelectorDefinition
   fields: FieldSchema[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onSelect: (rows: Array<Record<string, unknown>>) => void
 }
 
@@ -28,6 +30,14 @@ export interface ToolbarActionPluginProps {
   reload: () => Promise<void>
 }
 
+export interface ListRowActionPluginProps {
+  action: ListActionDefinition
+  row: DocumentListRow
+  schema: DocumentSchema
+  onChanged: () => Promise<void>
+  reload: () => Promise<void>
+}
+
 export interface EffectContext {
   definition: FieldEffectDefinition
   data: Record<string, unknown>
@@ -38,11 +48,26 @@ export interface EffectContext {
 
 export type EffectHandler = (context: EffectContext) => void | Promise<void>
 
+export interface FormActionContext {
+  action: FormActionDefinition
+  schema: DocumentSchema
+  document?: DocumentRecord
+  mode: FormMode
+  masterData: Record<string, unknown>
+  detailTables: DetailTableData[]
+  setField: (fieldId: string, value: unknown) => void
+  setDetailRows: (tableId: string, rows: Array<Record<string, unknown>>) => void
+}
+
+export type FormActionHandler = (context: FormActionContext) => void | DocumentRecord | Promise<void | DocumentRecord>
+
 const fieldPlugins = new Map<string, ComponentType<FieldPluginProps>>()
 const rowSelectorPlugins = new Map<string, ComponentType<RowSelectorPluginProps>>()
 const extraTabPlugins = new Map<string, ComponentType<ExtraTabPluginProps>>()
 const effectHandlers = new Map<string, EffectHandler>()
 const toolbarActionPlugins = new Map<string, ComponentType<ToolbarActionPluginProps>>()
+const listRowActionPlugins = new Map<string, ComponentType<ListRowActionPluginProps>>()
+const formActionHandlers = new Map<string, FormActionHandler>()
 
 export const pluginRegistry = {
   registerField(type: `custom:${string}`, component: ComponentType<FieldPluginProps>) { fieldPlugins.set(type, component) },
@@ -55,6 +80,10 @@ export const pluginRegistry = {
   getEffect(id: string) { return effectHandlers.get(id) },
   registerToolbarAction(id: string, component: ComponentType<ToolbarActionPluginProps>) { toolbarActionPlugins.set(id, component) },
   getToolbarAction(id: string) { return toolbarActionPlugins.get(id) },
+  registerListRowAction(id: string, component: ComponentType<ListRowActionPluginProps>) { listRowActionPlugins.set(id, component) },
+  getListRowAction(id: string) { return listRowActionPlugins.get(id) },
+  registerFormAction(id: string, handler: FormActionHandler) { formActionHandlers.set(id, handler) },
+  getFormAction(id: string) { return formActionHandlers.get(id) },
 }
 
 export function renderExtraTab(pluginId: string, props: ExtraTabPluginProps): ReactNode {

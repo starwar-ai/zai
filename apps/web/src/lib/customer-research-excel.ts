@@ -6,8 +6,9 @@ const aliases = {
   country: ["国家", "国家地区", "国家/地区", "地区", "country", "region", "market"],
   website: ["网址", "网站", "官网", "公司网址", "website", "web", "url", "homepage"],
   contactName: ["联系人", "联系人员", "客户姓名", "contact", "contactname", "contact name", "buyer"],
-  contactEmail: ["邮箱", "电子邮箱", "邮件", "联系人邮箱", "email", "e-mail", "mail"],
+  contactEmail: ["邮箱", "电子邮箱", "电子邮件", "邮件", "联系人邮箱", "email", "e-mail", "mail"],
   contactPhone: ["电话", "手机", "联系电话", "联系人电话", "phone", "telephone", "mobile", "tel"],
+  businessAddress: ["营业地址", "经营地址", "公司地址", "企业地址", "办公地址", "地址", "businessaddress", "business address", "companyaddress", "company address", "address"],
 } as const
 
 function normalize(value: string): string { return value.trim().toLowerCase().replace(/[\s_\-（）()]+/g, "") }
@@ -16,11 +17,7 @@ function cell(value: unknown): string | number | boolean | null { return value =
 
 export interface CustomerWorkbookResult { sheetName: string; totalRows: number; rows: CustomerResearchImportRow[]; issues: Array<{ row: number; message: string }>; mappedHeaders: Record<string, string> }
 
-export async function parseCustomerWorkbook(data: ArrayBuffer): Promise<CustomerWorkbookResult> {
-  const sheets = await readXlsxFile(new Blob([data]))
-  const firstSheet = sheets[0]
-  if (!firstSheet) throw new Error("Excel 文件中没有可读取的工作表")
-  const grid = firstSheet.data
+export function mapCustomerWorksheet(grid: readonly (readonly unknown[])[], sheetName: string): CustomerWorkbookResult {
   const headers = (grid[0] || []).map(text)
   if (!headers.length) throw new Error("Excel 文件中没有可读取的表头")
   const rawRows = grid.slice(1).filter((row) => row.some((value) => value !== null && value !== "")).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])))
@@ -33,7 +30,14 @@ export async function parseCustomerWorkbook(data: ArrayBuffer): Promise<Customer
     const companyName = text(raw[mappedHeaders.companyName!])
     if (!companyName) { issues.push({ row: index + 2, message: "公司名为空，已跳过" }); return }
     const value = (field: keyof typeof aliases) => mappedHeaders[field] ? text(raw[mappedHeaders[field]!]) || null : null
-    rows.push({ companyName, country: value("country"), website: value("website"), contactName: value("contactName"), contactEmail: value("contactEmail"), contactPhone: value("contactPhone"), rawData: Object.fromEntries(Object.entries(raw).map(([key, item]) => [key, cell(item)])) })
+    rows.push({ companyName, country: value("country"), website: value("website"), contactName: value("contactName"), contactEmail: value("contactEmail"), contactPhone: value("contactPhone"), businessAddress: value("businessAddress"), rawData: Object.fromEntries(Object.entries(raw).map(([key, item]) => [key, cell(item)])) })
   })
-  return { sheetName: firstSheet.sheet, totalRows: rawRows.length, rows, issues, mappedHeaders }
+  return { sheetName, totalRows: rawRows.length, rows, issues, mappedHeaders }
+}
+
+export async function parseCustomerWorkbook(data: ArrayBuffer): Promise<CustomerWorkbookResult> {
+  const sheets = await readXlsxFile(new Blob([data]))
+  const firstSheet = sheets[0]
+  if (!firstSheet) throw new Error("Excel 文件中没有可读取的工作表")
+  return mapCustomerWorksheet(firstSheet.data, firstSheet.sheet)
 }
