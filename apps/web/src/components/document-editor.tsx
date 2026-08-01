@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { ACTION_LABELS, evaluateCondition, isModeReadOnly, type ActivityRecord, type DetailRowData, type DetailTableData, type DetailTableSchema, type DocumentRecord, type DocumentSchema, type FieldSchema, type FormActionDefinition, type FormMode, type ImpactAssessment, type RowSourceReference, type TraceGraph } from "@zform/shared"
-import { AlertTriangle, ArrowLeft, Check, ChevronRight, FileClock, GitBranch, LoaderCircle, Save, X } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, FileText, LoaderCircle, PanelRightClose, PanelRightOpen, Save, X } from "lucide-react"
 import { api } from "@/apis/framework-api"
 import { DocumentDetailTable } from "@/components/document-detail-table"
 import { FieldRenderer } from "@/components/field-renderer"
@@ -45,14 +45,16 @@ function DetailRowSelector({ table, onSelect }: { table: DetailTableSchema; onSe
   return <><button className="secondary-button small-button" onClick={() => setOpen(true)}>+ {table.rowSelector.buttonLabel || "添加明细"}</button><Selector definition={table.rowSelector} fields={table.fields} open={open} onOpenChange={setOpen} onSelect={(rows) => { onSelect(rows); setOpen(false) }} /></>
 }
 
-export function DocumentEditor({ documentId, draft, schemas, onBack, onOpen, onOpenSource, onCreated, onChanged, onDirtyChange, highlightedRowId }: EditorProps) {
+export function DocumentEditor({ documentId, draft, schemas, onOpen, onOpenSource, onCreated, onChanged, onDirtyChange, highlightedRowId }: EditorProps) {
   const [document, setDocument] = useState<DocumentRecord | null>(null)
   const [masterData, setMasterData] = useState<Record<string, unknown>>({})
   const [detailTables, setDetailTables] = useState<DetailTableData[]>([])
   const [activities, setActivities] = useState<ActivityRecord[]>([])
   const [trace, setTrace] = useState<TraceGraph>({ downstream: [] })
   const [impact, setImpact] = useState<ImpactAssessment | null>(null)
-  const [tab, setTab] = useState("form")
+  const [contentTab, setContentTab] = useState("master")
+  const [sideTab, setSideTab] = useState("trace")
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null)
@@ -97,6 +99,16 @@ export function DocumentEditor({ documentId, draft, schemas, onBack, onOpen, onO
     })
     return [...groups.entries()]
   }, [masterData, schema])
+  const visibleDetailTables = useMemo(() => schema?.detailTables.filter((table) => evaluateCondition(table.visibleWhen, masterData)) || [], [masterData, schema])
+  useEffect(() => {
+    const available = new Set(["master", ...visibleDetailTables.map((table) => table.id), ...(document ? (schema?.extraTabs || []).map((extraTab) => `extra:${extraTab.id}`) : [])])
+    if (!available.has(contentTab)) setContentTab("master")
+  }, [contentTab, document, schema?.extraTabs, visibleDetailTables])
+  useEffect(() => {
+    if (!highlightedRowId) return
+    const target = detailTables.find((table) => table.rows.some((row) => row.id === highlightedRowId))
+    if (target) setContentTab(target.tableId)
+  }, [detailTables, highlightedRowId])
 
   const visibleActions = useMemo(() => {
     if (!schema) return []
@@ -169,21 +181,25 @@ export function DocumentEditor({ documentId, draft, schemas, onBack, onOpen, onO
   if (!schema || (!document && !draft)) return <div className="editor-loading">{error ? <p>{error}</p> : <><LoaderCircle className="spin" /><p>正在打开单据...</p></>}</div>
 
   const status = document?.status || "DRAFT"
-  const title = document?.code || (mode === "copy" ? `复制${schema.typeName}` : `新建${schema.typeName}`)
-
   return <>
-    <div className="editor-heading"><IconButton aria-label="返回" onClick={onBack}><ArrowLeft /></IconButton><div><div className="editor-title"><h1>{title}</h1><StatusPill status={status} label={schema.statusLabels?.[status]} /></div><p>{schema.typeName}{document ? ` · 创建于 ${formatDate(document.createdAt, true)} · V${document.version}` : mode === "copy" ? " · 复制草稿，保存后生成新单号" : " · 本地草稿，保存后生成单号"}</p></div><div className="heading-actions"><Button onClick={onBack}>返回列表</Button>{visibleActions.map((action) => <Button key={action.id} variant={actionVariant(action)} onClick={() => executeAction(action)} disabled={busy || Boolean(action.disabledWhen && evaluateCondition(action.disabledWhen, masterData))}>{action.command === "save" && <Save size={16} />}{action.variant === "success" && <Check size={16} />}{action.variant === "danger" && <X size={16} />}{action.label}</Button>)}</div></div>
+    <div className="editor-heading zform-document-heading"><div className="zform-document-title"><FileText /><h1>{schema.typeName}</h1><StatusPill status={status} label={schema.statusLabels?.[status]} /></div><div className="heading-actions">{visibleActions.map((action) => <Button size="sm" key={action.id} variant={actionVariant(action)} onClick={() => executeAction(action)} disabled={busy || Boolean(action.disabledWhen && evaluateCondition(action.disabledWhen, masterData))}>{action.command === "save" && <Save size={16} />}{action.variant === "success" && <Check size={16} />}{action.variant === "danger" && <X size={16} />}{action.label}</Button>)}{document && <IconButton aria-label={sidePanelCollapsed ? "展开详情面板" : "隐藏详情面板"} title={sidePanelCollapsed ? "展开详情面板" : "隐藏详情面板"} onClick={() => setSidePanelCollapsed((value) => !value)}>{sidePanelCollapsed ? <PanelRightOpen /> : <PanelRightClose />}</IconButton>}</div></div>
     {error && <div className="inline-error editor-error">{error}<button onClick={() => setError(null)}><X /></button></div>}
     {impact && <div className={`impact-banner ${impact.canProceed ? "warning" : "critical"}`}><AlertTriangle /><div><strong>{impact.summary}</strong>{impact.items.map((item) => <p key={`${item.ruleId}-${item.field}`}>{item.message}（{item.downstreamDocuments.map((doc) => doc.code).join("、")}）</p>)}</div></div>}
-    <Tabs className="editor-tabs" value={tab} onChange={setTab} items={[{ id: "form", label: "单据内容" }, ...(document ? [{ id: "trace", label: <><GitBranch />来源与下推</> }, { id: "history", label: <><FileClock />操作记录 <span>{activities.length}</span></> }, ...(schema.extraTabs || []).map((extraTab) => ({ id: `extra:${extraTab.id}`, label: extraTab.label }))] : [])]} />
-
-    {tab === "form" && <div className="editor-body"><div className="form-column">{groupedFields.map(([group, fields]) => <article className="form-section" key={group}><div className="section-title"><span /><h2>{group}</h2></div><div className="field-grid">{fields.map((field) => { const required = field.required || Boolean(field.requiredWhen && evaluateCondition(field.requiredWhen, masterData)); const readOnly = isModeReadOnly(field.readOnly, field.readOnlyModes, mode) || Boolean(field.readOnlyWhen && evaluateCondition(field.readOnlyWhen, masterData)); return <label className={field.span === 2 || field.type === "textarea" ? "field span-2" : "field"} key={field.id}><span>{field.label}{required && <i>*</i>}</span><FieldRenderer field={field} data={masterData} mode={mode} disabled={readOnly} onChange={updateField} />{field.helpText && <small>{field.helpText}</small>}</label> })}</div></article>)}
-      {schema.detailTables.filter((table) => evaluateCondition(table.visibleWhen, masterData)).map((table) => { const rows = rowsFor(table.id); const addAction = mode !== "view" ? <DetailRowSelector table={table} onSelect={(selectedRows) => setPluginRows(table.id, selectedRows)} /> : undefined; return <DocumentDetailTable key={table.id} storageId={schema.typeId} table={table} rows={rows} mode={mode} addAction={addAction} highlightedRowId={highlightedRowId} onTraceRow={(source) => void openSource(source)} onDeleteRow={(rowId) => setRows(table.id, rows.filter((item) => item.id !== rowId))} onUpdateCell={(rowId, fieldId, value) => updateRow(table.id, rowId, fieldId, value)} onReorderRows={(nextRows) => setRows(table.id, nextRows)} /> })}</div>
-      <aside className="summary-column"><article className="summary-card"><h3>单据信息</h3><dl><div><dt>当前状态</dt><dd><StatusPill status={status} label={schema.statusLabels?.[status]} /></dd></div><div><dt>表单模式</dt><dd>{mode}</dd></div><div><dt>创建人</dt><dd>{document?.createdBy || "保存后确定"}</dd></div><div><dt>最后更新</dt><dd>{document ? formatDate(document.updatedAt, true) : "尚未保存"}</dd></div><div><dt>数据版本</dt><dd>{document ? `V${document.version}` : "—"}</dd></div></dl></article></aside></div>}
-
-    {document && tab === "trace" && <div className="trace-view"><article className="panel"><div className="panel-header"><div><h2>单据关系</h2><p>整单和明细行均保留来源信息</p></div></div><div className="trace-line">{trace.upstream ? <div className="trace-node source"><span>上游来源</span><strong>{trace.upstream.code}</strong><small>{schemas.find((item) => item.typeId === trace.upstream?.typeId)?.typeName}</small></div> : <div className="trace-node empty"><span>上游来源</span><strong>业务起点</strong><small>没有来源单据</small></div>}<ChevronRight /><div className="trace-node current"><span>当前单据</span><strong>{document.code}</strong><small>{schema.typeName}</small></div>{schema.pushDownRules?.map((rule) => <div className="trace-target" key={rule.id}><ChevronRight /><button className="trace-node" disabled={busy || Boolean(rule.allowedStatuses && !rule.allowedStatuses.includes(document.status))} onClick={() => pushDown(rule.targetTypeId)}><span>可下推</span><strong>{rule.label}</strong><small>{schemas.find((item) => item.typeId === rule.targetTypeId)?.typeName}</small></button></div>)}</div>{trace.downstream.length > 0 && <div className="downstream-list"><strong>已生成下游</strong>{trace.downstream.map((item) => <span key={item.documentId}>{item.code}</span>)}</div>}</article></div>}
-    {tab === "history" && <div className="history-view panel"><div className="panel-header"><div><h2>操作记录</h2><p>记录单据从创建到完成的全部动作</p></div></div><div className="timeline">{activities.map((activity) => <div key={activity.id}><i /><span>{activity.operator.slice(0, 1)}</span><p><strong>{activity.message}</strong><small>{activity.operator} · {formatDate(activity.createdAt, true)}</small></p></div>)}</div></div>}
-    {document && schema.extraTabs?.map((extraTab) => tab === `extra:${extraTab.id}` ? <div key={extraTab.id}>{renderExtraTab(extraTab.pluginId, { document, schema, params: extraTab.params })}</div> : null)}
+    <div className={`zform-document-layout ${!document || sidePanelCollapsed ? "single-panel" : ""}`}>
+      <section className="zform-document-main"><article className="zform-document-card">
+        <Tabs className="zform-content-tabs" value={contentTab} onChange={setContentTab} items={[{ id: "master", label: "主信息" }, ...visibleDetailTables.map((table) => ({ id: table.id, label: table.label })), ...(document ? (schema.extraTabs || []).map((extraTab) => ({ id: `extra:${extraTab.id}`, label: extraTab.label })) : [])]} />
+        <div className="zform-content-panel">
+          {contentTab === "master" && <div className="zform-master-form">{groupedFields.map(([group, fields]) => <section className="zform-master-group" key={group}><h3>{group}</h3><div className="field-grid">{fields.map((field) => { const required = field.required || Boolean(field.requiredWhen && evaluateCondition(field.requiredWhen, masterData)); const readOnly = isModeReadOnly(field.readOnly, field.readOnlyModes, mode) || Boolean(field.readOnlyWhen && evaluateCondition(field.readOnlyWhen, masterData)); return <label className={field.span === 2 || field.type === "textarea" ? "field span-2" : "field"} key={field.id}><span>{field.label}{required && <i>*</i>}</span><FieldRenderer field={field} data={masterData} mode={mode} disabled={readOnly} onChange={updateField} />{field.helpText && <small>{field.helpText}</small>}</label> })}</div></section>)}</div>}
+          {visibleDetailTables.map((table) => { if (contentTab !== table.id) return null; const rows = rowsFor(table.id); const addAction = mode !== "view" ? <DetailRowSelector table={table} onSelect={(selectedRows) => setPluginRows(table.id, selectedRows)} /> : undefined; return <DocumentDetailTable key={table.id} storageId={schema.typeId} table={table} rows={rows} mode={mode} addAction={addAction} highlightedRowId={highlightedRowId} onTraceRow={(source) => void openSource(source)} onDeleteRow={(rowId) => setRows(table.id, rows.filter((item) => item.id !== rowId))} onUpdateCell={(rowId, fieldId, value) => updateRow(table.id, rowId, fieldId, value)} onReorderRows={(nextRows) => setRows(table.id, nextRows)} /> })}
+          {document && schema.extraTabs?.map((extraTab) => contentTab === `extra:${extraTab.id}` ? <div key={extraTab.id}>{renderExtraTab(extraTab.pluginId, { document, schema, params: extraTab.params })}</div> : null)}
+        </div>
+      </article></section>
+      {document && !sidePanelCollapsed && <aside className="zform-document-side"><Tabs className="zform-side-tabs" value={sideTab} onChange={setSideTab} items={[{ id: "trace", label: "关联单据" }, { id: "history", label: <>操作记录 <span>{activities.length}</span></> }]} />
+        <div className="zform-side-content">{sideTab === "trace" && <div className="trace-view"><div className="trace-line">{trace.upstream ? <div className="trace-node source"><span>上游来源</span><strong>{trace.upstream.code}</strong><small>{schemas.find((item) => item.typeId === trace.upstream?.typeId)?.typeName}</small></div> : <div className="trace-node empty"><span>上游来源</span><strong>业务起点</strong><small>没有来源单据</small></div>}<ChevronRight /><div className="trace-node current"><span>当前单据</span><strong>{document.code}</strong><small>{schema.typeName}</small></div>{schema.pushDownRules?.map((rule) => <div className="trace-target" key={rule.id}><ChevronRight /><button className="trace-node" disabled={busy || Boolean(rule.allowedStatuses && !rule.allowedStatuses.includes(document.status))} onClick={() => pushDown(rule.targetTypeId)}><span>可下推</span><strong>{rule.label}</strong><small>{schemas.find((item) => item.typeId === rule.targetTypeId)?.typeName}</small></button></div>)}</div>{trace.downstream.length > 0 && <div className="downstream-list"><strong>已生成下游</strong>{trace.downstream.map((item) => <span key={item.documentId}>{item.code}</span>)}</div>}</div>}
+          {sideTab === "history" && <div className="history-view"><div className="timeline">{activities.map((activity) => <div key={activity.id}><i /><span>{activity.operator.slice(0, 1)}</span><p><strong>{activity.message}</strong><small>{activity.operator} · {formatDate(activity.createdAt, true)}</small></p></div>)}</div></div>}
+        </div>
+      </aside>}
+    </div>
     <ConfirmDialog open={Boolean(confirmation)} title="确认执行操作" description={confirmation?.description || ""} destructive={confirmation?.destructive} onClose={() => setConfirmation(null)} onConfirm={() => { const action = confirmation?.action; setConfirmation(null); if (action) void action() }} />
   </>
 }

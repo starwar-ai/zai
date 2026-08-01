@@ -405,6 +405,39 @@ input, select, textarea, button, label { font-size: 12px; }
 .detail-row-drag-handle:hover,.detail-source-link:hover { background: #edf4f2; }
 .ztrade-detail-table .ui-table tr.highlighted td { animation: detail-row-highlight 2.4s ease-out; }
 @keyframes detail-row-highlight { 0%,35% { background: #fff2bf; } 100% { background: white; } }
+.zform-document-heading { min-height: 38px; margin-bottom: 16px; padding: 0 4px 8px; justify-content: space-between; border-bottom: 0; }
+.zform-document-heading > .heading-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.zform-document-title { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.zform-document-title > svg { width: 20px; color: #737373; }
+.zform-document-title h1 { margin: 0; color: #262626; font-size: 18px; font-weight: 500; }
+.zform-document-layout { min-height: 0; display: grid; grid-template-columns: minmax(0,3fr) minmax(280px,1fr); gap: 12px; align-items: stretch; }
+.zform-document-layout.single-panel { grid-template-columns: minmax(0,1fr); }
+.zform-document-main,.zform-document-side { min-width: 0; }
+.zform-document-card,.zform-document-side { height: 100%; border: 1px solid #e5e7eb; border-radius: 7px; background: white; overflow: hidden; }
+.zform-document-card { padding: 16px; }
+.zform-content-tabs,.zform-side-tabs { min-height: 34px; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 6px; background: #f5f5f5; }
+.zform-content-tabs { width: max-content; max-width: 100%; overflow-x: auto; }
+.zform-content-tabs button,.zform-side-tabs button { min-height: 28px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 4px; color: #737373; background: transparent; font-size: 10px; white-space: nowrap; cursor: pointer; }
+.zform-content-tabs button.active,.zform-side-tabs button.active { color: #262626; background: white; box-shadow: 0 1px 3px rgba(0,0,0,.09); }
+.zform-content-panel { margin-top: 16px; min-width: 0; }
+.zform-master-form { display: flex; flex-direction: column; gap: 24px; }
+.zform-master-group h3 { margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; color: #737373; font-size: 11px; font-weight: 600; }
+.zform-master-group .field-grid { padding: 0; }
+.zform-content-panel .ztrade-detail-table { border: 0; border-radius: 0; }
+.zform-content-panel .ztrade-detail-table > .section-title { padding-inline: 0; }
+.zform-document-side { display: flex; flex-direction: column; }
+.zform-side-tabs { margin: 12px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.zform-side-tabs button { justify-content: center; }
+.zform-side-tabs button span { margin-left: 2px; padding: 0 4px; border-radius: 7px; color: #737373; background: #e5e7eb; font-size: 8px; }
+.zform-side-content { min-height: 0; flex: 1; overflow: auto; border-top: 1px solid #ededed; }
+.zform-document-side .trace-view,.zform-document-side .history-view { width: 100%; max-width: none; margin: 0; }
+.zform-document-side .trace-line { padding: 24px 18px; flex-direction: column; }
+.zform-document-side .trace-line > svg,.zform-document-side .trace-target > svg { margin: 8px 0; transform: rotate(90deg); }
+.zform-document-side .trace-target { flex-direction: column; }
+.zform-document-side .trace-node { width: 100%; max-width: 220px; min-height: 78px; }
+.zform-document-side .downstream-list { margin: 0 16px 16px; }
+.zform-document-side .timeline { padding: 16px; }
+@media (max-width: 1050px) { .zform-document-layout { grid-template-columns: minmax(0,1fr); }.zform-document-side { min-height: 360px; } }
 .ztrade-detail-table .field-control { min-width: 0; }
 .management-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .management-form .span-2 { grid-column: span 2; }
