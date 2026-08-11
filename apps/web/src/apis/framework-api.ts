@@ -93,6 +93,7 @@ export const api = {
   processCustomerResearch: (id: string, input: CustomerResearchProcessRequest) => request<CustomerResearchProcessResult>(`/api/customer-research/${id}/process`, { method: "POST", body: JSON.stringify(input) }),
   streamCustomerResearch: requestCustomerResearchStream,
   retryCustomerResearch: (id: string) => request<DocumentRecord>(`/api/customer-research/${id}/retry`, { method: "POST" }),
+  exportCustomerResearchReport: (id: string) => requestBlob(`/api/customer-research/${id}/report.pdf`),
   resolveDeclarationNames: (input: DeclarationNameResolveRequest) => request<DeclarationNameResolveResult>("/api/declaration-names/resolve", { method: "POST", body: JSON.stringify(input) }),
   generateDeclarationNames: (items: DeclarationNameInput[]) => request<{ jobId: string; inputCount: number }>("/api/declaration-names/generate", { method: "POST", body: JSON.stringify({ items }) }),
   declarationNameJob: (id: string) => request<DeclarationNameJob>(`/api/declaration-names/jobs/${id}`),

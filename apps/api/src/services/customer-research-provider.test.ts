@@ -9,6 +9,9 @@ const original = {
   kimiKey: process.env.KIMI_API_KEY,
   minimaxModel: process.env.MINIMAX_MODEL,
   minimaxKey: process.env.MINIMAX_API_KEY,
+  arkModel: process.env.ARK_MODEL,
+  arkKey: process.env.ARK_API_KEY,
+  arkBaseUrl: process.env.ARK_BASE_URL,
   baseUrl: process.env.OPENAI_BASE_URL,
   timeout: process.env.LLM_TIMEOUT_MS,
   researchTimeout: process.env.CUSTOMER_RESEARCH_TIMEOUT_MS,
@@ -25,24 +28,43 @@ const validResult = {
 
 afterEach(() => {
   const restore = (name: string, value: string | undefined) => { if (value === undefined) delete process.env[name]; else process.env[name] = value }
-  restore("OPENAI_API_KEY", original.key); restore("OPENAI_MODEL", original.model); restore("LLM_PROVIDER_ORDER", original.providerOrder); restore("KIMI_MODEL", original.kimiModel); restore("KIMI_API_KEY", original.kimiKey); restore("MINIMAX_MODEL", original.minimaxModel); restore("MINIMAX_API_KEY", original.minimaxKey); restore("OPENAI_BASE_URL", original.baseUrl); restore("LLM_TIMEOUT_MS", original.timeout); restore("CUSTOMER_RESEARCH_TIMEOUT_MS", original.researchTimeout); restore("PROMPT_VERSION", original.prompt)
+  restore("OPENAI_API_KEY", original.key); restore("OPENAI_MODEL", original.model); restore("LLM_PROVIDER_ORDER", original.providerOrder); restore("KIMI_MODEL", original.kimiModel); restore("KIMI_API_KEY", original.kimiKey); restore("MINIMAX_MODEL", original.minimaxModel); restore("MINIMAX_API_KEY", original.minimaxKey); restore("ARK_MODEL", original.arkModel); restore("ARK_API_KEY", original.arkKey); restore("ARK_BASE_URL", original.arkBaseUrl); restore("OPENAI_BASE_URL", original.baseUrl); restore("LLM_TIMEOUT_MS", original.timeout); restore("CUSTOMER_RESEARCH_TIMEOUT_MS", original.researchTimeout); restore("PROMPT_VERSION", original.prompt)
   vi.unstubAllGlobals()
 })
 
 describe("customer research provider configuration", () => {
   it("uses LLM_PROVIDER_ORDER for model options and default", () => {
-    process.env.LLM_PROVIDER_ORDER = "kimi,openai,minimax"
+    process.env.LLM_PROVIDER_ORDER = "kimi,ark,openai,minimax"
     process.env.KIMI_MODEL = "kimi-model"
     process.env.KIMI_API_KEY = "kimi-key"
     process.env.OPENAI_MODEL = "openai-model"
     process.env.OPENAI_API_KEY = "openai-key"
     process.env.MINIMAX_MODEL = "minimax-model"
     process.env.MINIMAX_API_KEY = "minimax-key"
+    process.env.ARK_MODEL = "ark-model"
+    process.env.ARK_API_KEY = "ark-key"
     expect(customerResearchModelConfig()).toEqual({ defaultProvider: "kimi", options: [
       { provider: "kimi", model: "kimi-model", label: "kimi · kimi-model" },
+      { provider: "ark", model: "ark-model", label: "ark · ark-model" },
       { provider: "openai", model: "openai-model", label: "openai · openai-model" },
       { provider: "minimax", model: "minimax-model", label: "minimax · minimax-model" },
     ] })
+  })
+
+  it("calls Volcengine Ark through its OpenAI-compatible endpoint", async () => {
+    process.env.ARK_API_KEY = "ark-key"
+    process.env.ARK_MODEL = "ark-model"
+    process.env.ARK_BASE_URL = "https://ark.example.test/api/v3/"
+    process.env.LLM_PROVIDER_ORDER = "ark"
+    const fetchMock = vi.fn(async (_url: string, _request: RequestInit) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(validResult) } }] }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const researched = await researchCustomer({ companyName: "方舟测试客户" }, "ark")
+
+    expect(researched.model).toBe("ark-model")
+    const [url, request] = fetchMock.mock.calls[0]!
+    expect(url).toBe("https://ark.example.test/api/v3/chat/completions")
+    expect(JSON.parse(String(request.body))).toMatchObject({ model: "ark-model" })
   })
 
   it("reuses the existing zai OpenAI environment variables", async () => {

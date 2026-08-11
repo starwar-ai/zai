@@ -156,6 +156,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .research-import-preview { margin-top: 18px; display: grid; gap: 12px; }
 .research-import-preview .table-row { grid-template-columns: 1.3fr .7fr 1fr .8fr 1fr; min-width: 700px; }
 .customer-research-report { display: grid; gap: 18px; }
+.research-report-actions { display: flex; justify-content: flex-end; }
 .customer-research-history { display: grid; gap: 16px; }
 .customer-research-history pre { max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; padding: 14px; border-radius: 10px; background: var(--muted); font-size: 12px; line-height: 1.55; }
 .research-report-hero { padding: 28px; display: flex; gap: 18px; align-items: flex-start; background: linear-gradient(135deg, #0f766e, #115e59); color: white; border-radius: inherit; }

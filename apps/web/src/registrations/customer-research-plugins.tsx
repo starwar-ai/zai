@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { Building2, ExternalLink, FileSpreadsheet, Upload } from "lucide-react"
+import { Building2, Download, ExternalLink, FileSpreadsheet, Upload } from "lucide-react"
 import type { CustomerResearchDecision, CustomerResearchResult } from "@zform/shared"
 import { api } from "@/apis/framework-api"
 import { Alert, Button, Card, Dialog, FormField, Select, Textarea } from "@/components/ui"
@@ -64,13 +64,24 @@ function CustomerResearchBatchAction({ action, selectedRows, onChanged, reload }
 }
 
 function CustomerResearchReport({ document }: ExtraTabPluginProps) {
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const data = document.masterData; const sources = document.detailTables.find((table) => table.tableId === "sources")?.rows || []
   const decisions = [
     ["真实有效公司", "isVerifiedCompany", "verifiedCompanyReason", "verifiedCompanyConfidence"], ["园林户外业务", "isGardenOutdoor", "gardenOutdoorReason", "gardenOutdoorConfidence"],
     ["年销售额超过 100 万美元", "salesOverOneMillion", "salesReason", "salesConfidence"], ["员工人数超过 10 人", "employeesOverTen", "employeesReason", "employeesConfidence"],
   ] as const
   if (document.status !== "COMPLETED") return <Alert variant={document.status === "REJECTED" ? "danger" : "info"}>{document.status === "REJECTED" ? `调查失败：${String(data.failureMessage || "未知原因")}` : "调查完成后将在这里展示结构化报告。"}</Alert>
-  return <div className="customer-research-report"><Card><div className="research-report-hero"><Building2 /><div><span>综合可信度 {String(data.overallConfidence || 0)}%</span><h2>{String(data.companyName || document.code)}</h2><p>{String(data.companySummary || "暂无公司简介")}</p></div></div></Card><div className="research-decision-grid">{decisions.map(([label, value, reason, confidence]) => <Card key={value}><div className="research-decision-title"><strong>{label}</strong><span>{decision(data[value])}</span></div><p>{String(data[reason] || "暂无依据")}</p><small>可信度 {String(data[confidence] || 0)}%</small></Card>)}</div><div className="dashboard-grid"><Card className="span-2"><div className="panel-header"><div><h2>业务与规模</h2><p>公开信息的综合归纳</p></div></div><p>{String(data.businessScope || "—")}</p><p>{String(data.scaleEstimate || "—")}</p><p>年销售额估算：{data.annualSalesEstimateUsd ? `$${Number(data.annualSalesEstimateUsd).toLocaleString("zh-CN")}` : "暂无可靠数据"}　员工人数估算：{data.employeeEstimate ? `${String(data.employeeEstimate)} 人` : "暂无可靠数据"}</p></Card><Card><div className="panel-header"><div><h2>公开来源</h2><p>结论可追溯依据</p></div></div>{sources.length ? sources.map((row) => <a className="research-source" href={String(row.data.url)} target="_blank" rel="noreferrer" key={row.id}><strong>{String(row.data.title)}</strong><span>{String(row.data.claim)}</span><ExternalLink size={14} /></a>) : <p>未返回可验证的公开链接。</p>}</Card></div></div>
+  const exportPdf = async () => {
+    setExporting(true); setExportError(null)
+    try {
+      const blob = await api.exportCustomerResearchReport(document.id)
+      const url = URL.createObjectURL(blob); const link = window.document.createElement("a")
+      link.href = url; link.download = `${String(data.companyName || document.code)}_${document.code}_背景调查报告.pdf`; link.click(); URL.revokeObjectURL(url)
+    } catch (reason) { setExportError(reason instanceof Error ? reason.message : "PDF 导出失败") }
+    finally { setExporting(false) }
+  }
+  return <div className="customer-research-report"><div className="research-report-actions"><Button variant="primary" loading={exporting} onClick={() => void exportPdf()}><Download size={16} />{exporting ? "正在生成…" : "导出 PDF"}</Button></div>{exportError && <Alert variant="danger">{exportError}</Alert>}<Card><div className="research-report-hero"><Building2 /><div><span>综合可信度 {String(data.overallConfidence || 0)}%</span><h2>{String(data.companyName || document.code)}</h2><p>{String(data.companySummary || "暂无公司简介")}</p></div></div></Card><div className="research-decision-grid">{decisions.map(([label, value, reason, confidence]) => <Card key={value}><div className="research-decision-title"><strong>{label}</strong><span>{decision(data[value])}</span></div><p>{String(data[reason] || "暂无依据")}</p><small>可信度 {String(data[confidence] || 0)}%</small></Card>)}</div><div className="dashboard-grid"><Card className="span-2"><div className="panel-header"><div><h2>业务与规模</h2><p>公开信息的综合归纳</p></div></div><p>{String(data.businessScope || "—")}</p><p>{String(data.scaleEstimate || "—")}</p><p>年销售额估算：{data.annualSalesEstimateUsd ? `$${Number(data.annualSalesEstimateUsd).toLocaleString("zh-CN")}` : "暂无可靠数据"}　员工人数估算：{data.employeeEstimate ? `${String(data.employeeEstimate)} 人` : "暂无可靠数据"}</p></Card><Card><div className="panel-header"><div><h2>公开来源</h2><p>结论可追溯依据</p></div></div>{sources.length ? sources.map((row) => <a className="research-source" href={String(row.data.url)} target="_blank" rel="noreferrer" key={row.id}><strong>{String(row.data.title)}</strong><span>{String(row.data.claim)}</span><ExternalLink size={14} /></a>) : <p>未返回可验证的公开链接。</p>}</Card></div></div>
 }
 
 function parsedResearchResult(value: unknown): CustomerResearchResult | null {
