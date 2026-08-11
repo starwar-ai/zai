@@ -131,7 +131,7 @@ export function DocumentList({ schema, onOpen, onCreate, onCopy, onChanged }: Do
   const renderToolbarAction = (action: ToolbarActionDefinition) => {
     if (action.command.startsWith("custom:")) {
       const Plugin = pluginRegistry.getToolbarAction(action.command.slice("custom:".length))
-      return Plugin ? <Plugin key={action.id} action={action} schema={schema} onChanged={onChanged} reload={load} /> : <Button key={action.id} disabled>{action.label}（插件未注册）</Button>
+      return Plugin ? <Plugin key={action.id} action={action} schema={schema} selectedRows={[...selectedRows.values()]} onChanged={onChanged} reload={load} /> : <Button key={action.id} disabled>{action.label}（插件未注册）</Button>
     }
     return <Button size="sm" key={action.id} variant={action.variant === "primary" ? "primary" : action.variant === "danger" ? "danger" : "secondary"} disabled={action.requiresSelection && !selected.length} onClick={() => executeToolbar(action.command)}>{action.command === "create" && <Plus size={16} />}{action.command === "bulkDelete" && <Trash2 size={15} />}{action.label}</Button>
   }

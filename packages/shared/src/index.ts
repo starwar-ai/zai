@@ -509,6 +509,8 @@ export interface CustomerResearchImportResult { totalRows: number; importedRows:
 export interface CustomerResearchModelOption { provider: string; model: string; label: string }
 export interface CustomerResearchModelConfig { defaultProvider: string; options: CustomerResearchModelOption[] }
 export interface CustomerResearchProcessRequest { provider?: string }
+export interface CustomerResearchBatchRequest { documentIds: string[]; provider?: string }
+export interface CustomerResearchBatchResult { batchId: string; acceptedCount: number }
 export interface CustomerResearchSource { title: string; url: string; claim: string }
 export interface CustomerResearchResult {
   companySummary: string

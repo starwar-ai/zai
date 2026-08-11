@@ -31,6 +31,38 @@ function CustomerResearchImportAction({ action, onChanged, reload }: ToolbarActi
   </Dialog></>
 }
 
+function CustomerResearchBatchAction({ action, selectedRows, onChanged, reload }: ToolbarActionPluginProps) {
+  const [open, setOpen] = useState(false)
+  const [options, setOptions] = useState<Array<{ provider: string; model: string; label: string }>>([])
+  const [provider, setProvider] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const eligibleRows = selectedRows.filter((row) => row.status === "DRAFT" || row.status === "COMPLETED")
+  const unavailableCount = selectedRows.length - eligibleRows.length
+  const show = async () => {
+    setOpen(true); setBusy(true); setError(null); setMessage(null)
+    try { const config = await api.customerResearchModels(); setOptions(config.options); setProvider(config.defaultProvider) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "加载可选模型失败") }
+    finally { setBusy(false) }
+  }
+  const submit = async () => {
+    if (!provider || !eligibleRows.length) return
+    setBusy(true); setError(null); setMessage(null)
+    try {
+      const result = await api.processCustomerResearchBatch({ documentIds: eligibleRows.map((row) => row.documentId), provider })
+      setMessage(`已受理 ${result.acceptedCount} 位客户。后台将按勾选顺序逐条调查，每完成一条立即保存结果。`)
+      await Promise.all([onChanged(), reload()])
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "启动后台调查失败") }
+    finally { setBusy(false) }
+  }
+  return <><Button size="sm" variant={action.variant || "secondary"} disabled={!selectedRows.length} onClick={() => void show()}>{action.label}</Button><Dialog open={open} title="调查所选客户" description="任务提交后可关闭窗口；后台一次只处理一位客户，并在处理下一位前保存本条结果。" width={620} onClose={() => !busy && setOpen(false)} footer={<><Button disabled={busy} onClick={() => setOpen(false)}>关闭</Button><Button variant="primary" disabled={busy || !provider || !eligibleRows.length || Boolean(message)} onClick={() => void submit()}>{busy ? "正在提交…" : "启动后台调查"}</Button></>}>
+    <Alert variant="info">已选择 {selectedRows.length} 位客户，可调查 {eligibleRows.length} 位。{unavailableCount ? `另有 ${unavailableCount} 位正在调查或调查失败，本次不会提交。` : ""}</Alert>
+    <FormField label="调查模型" hint="同一批次按勾选顺序使用此模型。"><Select value={provider} disabled={busy || !options.length || Boolean(message)} onChange={(event) => setProvider(event.target.value)}>{options.map((item) => <option value={item.provider} key={item.provider}>{item.label}</option>)}</Select></FormField>
+    {error && <Alert variant="danger">{error}</Alert>}{message && <Alert variant="success">{message}</Alert>}
+  </Dialog></>
+}
+
 function CustomerResearchReport({ document }: ExtraTabPluginProps) {
   const data = document.masterData; const sources = document.detailTables.find((table) => table.tableId === "sources")?.rows || []
   const decisions = [
@@ -120,6 +152,7 @@ export function registerCustomerResearchPlugins(): void {
   if (registered) return
   registered = true
   pluginRegistry.registerToolbarAction("customer-research-import", CustomerResearchImportAction)
+  pluginRegistry.registerToolbarAction("customer-research-batch", CustomerResearchBatchAction)
   pluginRegistry.registerListRowAction("customer-research-now", CustomerResearchNowAction)
   pluginRegistry.registerListRowAction("customer-research-retry", CustomerResearchRetryAction)
   pluginRegistry.registerExtraTab("customer-research-report", CustomerResearchReport)

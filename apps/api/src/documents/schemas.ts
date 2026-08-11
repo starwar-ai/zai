@@ -105,6 +105,7 @@ export const schemas: DocumentSchema[] = [
       ],
       toolbarActions: [
         { id: "import", label: "导入客户", command: "custom:customer-research-import", variant: "primary", modes: ["document"] },
+        { id: "research-selected", label: "调查所选客户", command: "custom:customer-research-batch", requiresSelection: true, modes: ["document"], variant: "success" },
         { id: "export", label: "导出当前结果", command: "export" },
       ],
     },

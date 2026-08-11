@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 import { DocumentStatus, Prisma } from "@prisma/client"
-import type { CustomerResearchImportRequest, CustomerResearchImportResult, CustomerResearchModelConfig, CustomerResearchProcessResult, CustomerResearchQueueSummary, DetailTableData, DocumentRecord } from "@zform/shared"
+import type { CustomerResearchBatchRequest, CustomerResearchBatchResult, CustomerResearchImportRequest, CustomerResearchImportResult, CustomerResearchModelConfig, CustomerResearchProcessResult, CustomerResearchQueueSummary, DetailTableData, DocumentRecord } from "@zform/shared"
 import { prisma } from "../database.js"
 import { BusinessError } from "../utils/business-error.js"
 import { appendResearchRun, buildPreviousResearchContext, researchRunRows, replaceResearchTable } from "../documents/customer-research-history.js"
@@ -12,6 +12,7 @@ import { searchCustomerWeb } from "./tavily-search-service.js"
 
 const typeId = "customer_due_diligence"
 type Identity = UserContext & { userName: string }
+let customerResearchBatchQueue: Promise<void> = Promise.resolve()
 
 export function getCustomerResearchModelConfig(): CustomerResearchModelConfig { return customerResearchModelConfig() }
 function selectedResearchProvider(requested?: string): string {
@@ -165,6 +166,30 @@ async function processClaimedCustomer(document: DocumentRecord, identity: Identi
 export async function processCustomerResearch(id: string, identity: Identity, provider?: string, onDelta?: (delta: string, kind: ResearchDeltaKind) => void): Promise<CustomerResearchProcessResult> {
   const selectedProvider = selectedResearchProvider(provider)
   return processClaimedCustomer(await claimCustomer(id, identity), identity, selectedProvider, onDelta)
+}
+
+async function processCustomerResearchBatch(documentIds: string[], identity: Identity, provider: string): Promise<void> {
+  for (const documentId of documentIds) {
+    try {
+      await processCustomerResearch(documentId, identity, provider)
+    } catch (error) {
+      const message = (error instanceof Error ? error.message : "未知调查错误").slice(0, 500)
+      await prisma.activityRecord.create({ data: { documentId, action: "research-batch-failed", operator: identity.userName, message: `批量调查未能启动：${message}` } }).catch(() => undefined)
+    }
+  }
+}
+
+export async function queueCustomerResearchBatch(input: CustomerResearchBatchRequest, identity: Identity): Promise<CustomerResearchBatchResult> {
+  const provider = selectedResearchProvider(input.provider)
+  const documentIds = [...new Set(input.documentIds)]
+  const documents = await Promise.all(documentIds.map((id) => findDocument(id, identity)))
+  const invalid = documents.filter((document) => document.typeId !== typeId || (document.status !== "DRAFT" && document.status !== "COMPLETED"))
+  if (invalid.length) throw new BusinessError(`所选客户中有 ${invalid.length} 条不处于等待调查或调查完成状态，请刷新列表后重试。`, 409)
+  const batchId = randomUUID()
+  customerResearchBatchQueue = customerResearchBatchQueue.then(() => processCustomerResearchBatch(documentIds, identity, provider)).catch((error: unknown) => {
+    console.error(`[customer-research:${batchId}] 后台批量调查异常`, error)
+  })
+  return { batchId, acceptedCount: documentIds.length }
 }
 
 export async function retryCustomerResearch(id: string, identity: Identity): Promise<DocumentRecord> {

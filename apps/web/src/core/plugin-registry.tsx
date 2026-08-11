@@ -26,6 +26,7 @@ export interface ExtraTabPluginProps {
 export interface ToolbarActionPluginProps {
   action: ToolbarActionDefinition
   schema: DocumentSchema
+  selectedRows: DocumentListRow[]
   onChanged: () => Promise<void>
   reload: () => Promise<void>
 }

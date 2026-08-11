@@ -1,4 +1,4 @@
-import type { CustomerResearchImportRequest, CustomerResearchResult } from "@zform/shared"
+import type { CustomerResearchBatchRequest, CustomerResearchImportRequest, CustomerResearchResult } from "@zform/shared"
 import { z } from "zod"
 
 const nullableText = (max: number) => z.string().trim().max(max).optional().nullable()
@@ -13,6 +13,10 @@ export const customerResearchImportSchema: z.ZodType<CustomerResearchImportReque
 }).strict()
 
 export const customerResearchProcessSchema = z.object({ provider: z.string().trim().min(1).max(50).optional() }).strict()
+export const customerResearchBatchSchema: z.ZodType<CustomerResearchBatchRequest> = z.object({
+  documentIds: z.array(z.string().uuid()).min(1).max(1000),
+  provider: z.string().trim().min(1).max(50).optional(),
+}).strict()
 
 const decision = z.enum(["yes", "no", "uncertain"])
 const confidence = z.number().int().min(0).max(100)
