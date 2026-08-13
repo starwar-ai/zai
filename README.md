@@ -90,7 +90,8 @@ Compose 将 PostgreSQL 映射到本机 `5433` 端口，数据保存在具名卷 
 - 事务安全：单号生成、状态流转、审计记录和下推操作在数据库事务中提交
 - 报关名称标准化：按 `name + nameEng` 归一化去重，支持多模型故障切换、结构化输出、强制复核规则、人工审核、来源明细回写和独立审计日志
 - 客户背景调查：通过 Schema 单据承载客户资料、四项判定、可信度和公开来源，支持 Excel 批量去重导入、表格勾选后由后台单队列顺序调查并逐条持久化、权限内队列领取、按 `LLM_PROVIDER_ORDER` 选择供应商与模型立即调查、模型返回实时展示、多次调查历史留档及作为后续调查上下文、失败重试、工作台进度和报告 Tab；复用 OpenAI、火山方舟、Kimi、MiniMax 的现有模型配置
-- 支付截图 OCR：在 ZAI 外壳中提供批量拖拽上传、OpenAI 视觉结构化识别、个人历史、原图详情、删除与 Excel 导出；图片与结果保存在 PostgreSQL，并按当前用户隔离
+- 电子发票识别（移植自 `zinvoice`）：在 ZAI 外壳中提供 PDF/图片发票批量拖拽上传；原生 PDF 优先提取全部页面文本层并读取首页发票二维码，仅在没有有效文本层时回退到 PDF 视觉识别。二维码核心字段覆盖结构化识别结果，AI 必须补全购买方、销售方、商品明细并提取备注（票面为空时允许为空），缺少购销方或有效明细时整次识别失败；支持个人历史、原件详情、删除与明细级 Excel 导出，文件与结果保存在 PostgreSQL，并按当前用户隔离
+- 支付截图自动识别：保留原有电商及支付凭证批量识别能力，与电子发票识别使用独立菜单和分类历史，提取平台、订单、金额、时间、支付方式及收款方
 
 ## 常用命令
 
@@ -136,7 +137,7 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | POST | `/api/customer-research/:id/process-stream` | 以 NDJSON 事件流实时调查指定客户 |
 | POST | `/api/customer-research/:id/retry` | 将失败调查重新加入队列 |
 | GET | `/api/customer-research/:id/report.pdf` | 导出权限范围内已完成的客户背景调查 PDF 报告 |
-| POST | `/api/ocr/recognitions` | 上传支付截图并识别结构化支付信息 |
+| POST | `/api/ocr/recognitions` | 上传 PDF/图片电子发票并识别抬头、金额税额和商品明细 |
 | GET | `/api/ocr/recognitions` | 分页查询当前用户的识别历史 |
 | GET | `/api/ocr/recognitions/:id` | 获取当前用户的识别详情 |
 | GET | `/api/ocr/recognitions/:id/image` | 获取识别记录的原始图片 |
@@ -157,6 +158,8 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | POST | `/api/declaration-names/writeback` | 将已审核映射显式回写到已登记来源项 |
 | POST | `/api/external/declaration-names/convert` | 使用 API Key 同步转换中英文商品名 |
 | POST | `/api/external/declaration-names/convert/batch` | 使用 API Key 批量转换中英文商品名，逐项返回结果 |
+| POST | `/api/external/invoices/recognize` | 使用 API Key 同步识别单张 PDF/图片电子发票 |
+| POST | `/api/external/invoices/recognize/batch` | 使用 API Key 批量识别最多 10 张电子发票，逐项返回结果 |
 | GET | `/api-docs` | Swagger 外部接口调试页 |
 | GET | `/api/openapi.json` | OpenAPI 3.0 接口定义 |
 
@@ -171,6 +174,8 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 ```
 
 外部报关品名接口使用 `X-API-Key`（也支持 `Authorization: Bearer <key>`）鉴权。开发环境在 `apps/api/.env` 配置 `EXTERNAL_API_KEYS` 后，可打开 `http://localhost:3100/api-docs`，点击 **Authorize** 输入密钥并直接调试。多个调用方密钥以英文逗号分隔。接口优先复用已审核映射，未命中时同步调用模型；`qualified=false` 或 `reviewRequired=true` 的结果必须进入人工复核，不能直接用于正式申报。
+
+外部电子发票接口复用同一套 `EXTERNAL_API_KEYS` 鉴权与统一响应结构。文件通过不带 Data URL 前缀的 Base64 传入，单文件最大 10MB；识别记录按 API Key 哈希后的外部调用方身份隔离保存。批量接口单次最多 10 张、并发 2 张，单项失败不会中断其余项目。
 
 批量转换接口请求体为 `{ "items": [...] }`，单次最多 100 条，返回顺序与输入顺序一致。每个结果通过 `success` 区分成功数据与失败原因；单项失败不会中断其他项。
 
@@ -258,7 +263,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 
 报关名称能力使用 `declaration-name:view`、`declaration-name:generate`、`declaration-name:review` 和 `declaration-name:writeback` 四个权限码；种子数据提供最小权限的 `DECLARATION_REVIEWER` 角色。
 
-支付截图识别使用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。所有记录查询、原图、删除和导出都会再次按当前用户 ID 限定。
+支付截图自动识别和电子发票识别共用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。两类记录按识别类型分别查询，并且原件、删除和导出都会再次按当前用户 ID 与识别类型限定。
 
 前端隐藏入口只用于交互，真正的写权限由 API 校验。内置 `SYSTEM_ADMIN` 角色和 `framework-user` 演示用户受删除保护。生产接入认证时，应由可信中间件确定 `x-user-id`，不要接受浏览器任意冒充用户。
 
@@ -275,7 +280,8 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `TAVILY_SEARCH_DEPTH` / `TAVILY_MAX_RESULTS` / `TAVILY_TIMEOUT_MS`：搜索深度、单个关键词结果数和单次搜索超时，默认 `basic`、`5`、`30000`
 - `OPENAI_API_KEY` / `OPENAI_MODEL`：OpenAI Responses API 配置
 - `ARK_API_KEY` / `ARK_MODEL` / `ARK_BASE_URL`：火山方舟 OpenAI-compatible 配置
-- `OCR_MODEL`：支付截图视觉识别模型；未配置时依次回退到 `OPENAI_MODEL` 和 `gpt-4.1-mini`
+- `OCR_PROVIDER` / `OCR_MODEL`：电子发票识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时完全回退到 `LLM_PROVIDER_ORDER` 和对应供应商的系统模型配置
+- `PAYMENT_OCR_MODEL`：支付截图识别的可选 OpenAI 模型；留空时使用 `OPENAI_MODEL`
 - `KIMI_API_KEY` / `KIMI_MODEL` / `KIMI_BASE_URL`：Kimi OpenAI-compatible 配置
 - `MINIMAX_API_KEY` / `MINIMAX_MODEL` / `MINIMAX_BASE_URL`：MiniMax Anthropic-compatible 配置
 - `AUTO_APPROVE_CONFIDENCE`：自动通过置信度，默认 `0.9`

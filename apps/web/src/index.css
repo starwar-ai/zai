@@ -461,7 +461,7 @@ input, select, textarea, button, label { font-size: 12px; }
 .permission-editor section label small { overflow: hidden; color: #8a8a8a; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .wildcard-permission { padding: 18px; display: flex; align-items: center; gap: 9px; color: #737373; font-size: 11px; }
 
-/* ZOCR 支付截图识别 */
+/* 电子发票识别（移植自 zinvoice） */
 .ocr-tabs { margin: -8px 0 18px; }
 .ocr-upload-actions { min-height: 38px; margin-bottom: 10px; display: flex; justify-content: flex-end; gap: 8px; }
 .ocr-alert { margin-bottom: 12px; }
@@ -478,6 +478,7 @@ input, select, textarea, button, label { font-size: 12px; }
 .ocr-upload-list > header strong { color: #404040; font-size: 12px; }
 .ocr-upload-item { min-height: 96px; padding: 14px; display: grid; grid-template-columns: 68px minmax(0,1fr) auto; align-items: start; gap: 14px; }
 .ocr-upload-item > img { width: 68px; height: 68px; border: 1px solid #e5e7eb; border-radius: 8px; object-fit: cover; }
+.ocr-upload-item > .ocr-pdf-preview { width: 68px; height: 68px; border: 1px solid #e5e7eb; border-radius: 8px; }
 .ocr-upload-item > div:nth-child(2) > header { min-height: 27px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ocr-upload-item > div:nth-child(2) > header strong { min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .ocr-upload-item header strong svg { width: 14px; flex: none; color: #737373; }
@@ -489,11 +490,19 @@ input, select, textarea, button, label { font-size: 12px; }
 .ocr-detail { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 20px; }
 .ocr-detail > div > span { display: block; margin-bottom: 9px; color: #737373; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
 .ocr-detail img,.ocr-image-loading { width: 100%; height: 360px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f5f5f5; object-fit: contain; }
+.ocr-pdf-preview { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 8px; border: 1px solid #e5e7eb; border-radius: 8px; color: #737373; background: #fafafa; font-size: 11px; }
+.ocr-pdf-preview svg { width: 30px; height: 30px; color: #a34e43; }
+.ocr-pdf-document { width: 100%; height: 520px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
 .ocr-image-loading { display: grid; place-items: center; }
 .ocr-result-fields { margin: 0; padding: 13px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
 .ocr-result-fields div { min-width: 0; }
 .ocr-result-fields dt { color: #8a8a8a; font-size: 10px; }
 .ocr-result-fields dd { margin: 3px 0 0; overflow-wrap: anywhere; color: #262626; font-size: 12px; font-weight: 500; }
+.ocr-invoice-result { min-width: 0; display: grid; gap: 14px; }
+.ocr-extraction-method { display: flex; align-items: center; gap: 9px; color: #737373; font-size: 10px; }
+.ocr-invoice-items { min-width: 0; overflow-x: auto; }
+.ocr-invoice-items > strong { display: block; margin-bottom: 8px; color: #404040; font-size: 11px; }
+.ocr-invoice-items .ui-table { min-width: 760px; }
 .ocr-history { overflow: hidden; }
 .ocr-history-toolbar { min-height: 64px; padding: 12px 15px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e5e7eb; }
 .ocr-history-toolbar > svg { width: 15px; color: #8a8a8a; }

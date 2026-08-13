@@ -9,6 +9,7 @@ import { DocumentList } from "@/components/document-list"
 import { GlobalStatusBar } from "@/components/global-status-bar"
 import { NotificationCenter } from "@/components/notification-center"
 import { OcrRecognition } from "@/components/ocr-recognition"
+import { PaymentRecognition } from "@/components/payment-recognition"
 import { SystemManagement } from "@/components/system-management"
 import { ConfirmDialog, IconButton } from "@/components/ui"
 import { UiShowcase } from "@/components/ui/ui-showcase"
@@ -97,7 +98,7 @@ export function AppLayout() {
     if (item.target === "user-management") openView({ kind: "system", entity: "users" }, "用户管理", "system:users")
     if (item.target === "role-management") openView({ kind: "system", entity: "roles" }, "角色管理", "system:roles")
     if (item.target === "declaration-name") openView({ kind: "declaration-name" }, "报关名称审核", "declaration-name")
-    if (item.target === "ocr-recognition") openView({ kind: "ocr" }, "支付截图识别", "ocr-recognition")
+    if (item.target === "ocr-recognition") { const mode = item.targetId === "payment" ? "payment" : "invoice"; openView({ kind: "ocr", mode }, item.label, `ocr-recognition:${mode}`) }
   }
   const isMenuActive = (item: ShellMenuItem) => {
     if (item.target === "dashboard") return activeTab.view.kind === "dashboard"
@@ -107,7 +108,7 @@ export function AppLayout() {
     if (item.target === "user-management") return activeTab.view.kind === "system" && activeTab.view.entity === "users"
     if (item.target === "role-management") return activeTab.view.kind === "system" && activeTab.view.entity === "roles"
     if (item.target === "declaration-name") return activeTab.view.kind === "declaration-name"
-    if (item.target === "ocr-recognition") return activeTab.view.kind === "ocr"
+    if (item.target === "ocr-recognition") return activeTab.view.kind === "ocr" && activeTab.view.mode === (item.targetId === "payment" ? "payment" : "invoice")
     return activeTab.view.kind === item.target
   }
   const saveUserSettings = async () => { if (settings) { const saved = await api.saveSettings(settings); setSettings(saved); setSidebarOpen(!saved.sidebarCollapsed) } }
@@ -128,7 +129,7 @@ export function AppLayout() {
     if (view.kind === "settings" && shell && settings) return <UserSettings config={shell.config} settings={settings} onChange={setSettings} onSave={saveUserSettings} />
     if (view.kind === "system") return <SystemManagement entity={view.entity} onShellChanged={async () => { const next = await api.shell(); setShell(next) }} />
     if (view.kind === "declaration-name") return <DeclarationNameReview key={tab.revision} />
-    if (view.kind === "ocr") return <OcrRecognition key={tab.revision} />
+    if (view.kind === "ocr") return view.mode === "payment" ? <PaymentRecognition key={tab.revision} /> : <OcrRecognition key={tab.revision} />
     return <UiShowcase />
   }
 

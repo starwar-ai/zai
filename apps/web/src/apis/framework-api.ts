@@ -6,11 +6,17 @@ const apiBase = import.meta.env.VITE_API_BASE || ""
 const identityHeaders = { "x-user-name": encodeURIComponent("林默"), "x-user-id": "framework-user", "x-user-department-id": "demo-department" }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${apiBase}${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...identityHeaders, ...options.headers },
-  })
-  const body = await response.json() as ApiEnvelope<T>
+  let response: Response
+  try {
+    response = await fetch(`${apiBase}${path}`, { ...options, headers: { "Content-Type": "application/json", ...identityHeaders, ...options.headers } })
+  } catch (reason) {
+    throw new Error(reason instanceof Error && reason.message ? `无法连接 API：${reason.message}` : "无法连接 API，请确认服务正在运行")
+  }
+  const responseText = await response.text()
+  if (!responseText.trim()) throw new Error(`API 未返回数据（HTTP ${response.status}），服务可能已异常退出`)
+  let body: ApiEnvelope<T>
+  try { body = JSON.parse(responseText) as ApiEnvelope<T> }
+  catch { throw new Error(`API 返回了无效数据（HTTP ${response.status}）`) }
   if (!response.ok || !body.success) throw new Error(body.message || "请求失败")
   return body.data
 }
@@ -63,10 +69,10 @@ export const api = {
   updateDepartment: (id: string, input: DepartmentInput) => request<DepartmentRecord>(`/api/system-management/departments/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   removeDepartment: (id: string) => request<null>(`/api/system-management/departments/${id}`, { method: "DELETE" }),
   recognizeOcr: (input: OcrRecognizeRequest) => request<OcrRecognizeResult>("/api/ocr/recognitions", { method: "POST", body: JSON.stringify(input) }),
-  ocrRecognitions: (query: OcrRecognitionQuery = {}) => { const params = new URLSearchParams(); Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== "") params.set(key, String(value)) }); return request<ListResponse<OcrRecognitionRecord>>(`/api/ocr/recognitions?${params}`) },
-  ocrRecognition: (id: string) => request<OcrRecognitionRecord>(`/api/ocr/recognitions/${id}`),
-  ocrImage: (id: string) => requestBlob(`/api/ocr/recognitions/${id}/image`),
-  removeOcrRecognition: (id: string) => request<null>(`/api/ocr/recognitions/${id}`, { method: "DELETE" }),
+  ocrRecognitions: (query: OcrRecognitionQuery) => { const params = new URLSearchParams(); Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== "") params.set(key, String(value)) }); return request<ListResponse<OcrRecognitionRecord>>(`/api/ocr/recognitions?${params}`) },
+  ocrRecognition: (type: "PAYMENT" | "INVOICE", id: string) => request<OcrRecognitionRecord>(`/api/ocr/recognitions/${id}?recognitionType=${type}`),
+  ocrImage: (type: "PAYMENT" | "INVOICE", id: string) => requestBlob(`/api/ocr/recognitions/${id}/image?recognitionType=${type}`),
+  removeOcrRecognition: (type: "PAYMENT" | "INVOICE", id: string) => request<null>(`/api/ocr/recognitions/${id}?recognitionType=${type}`, { method: "DELETE" }),
   exportOcrRecognitions: (input: OcrExportRequest) => request<OcrExportResult>("/api/ocr/recognitions/export", { method: "POST", body: JSON.stringify(input) }),
   schemas: () => request<DocumentSchema[]>("/api/schemas"),
   dashboard: () => request<DashboardData>("/api/dashboard"),

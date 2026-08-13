@@ -2,7 +2,10 @@
   "name": "zform-framework",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @zform/api\" \"npm run dev -w @zform/web\"",
     "build": "npm run build -w @zform/shared && npm run build -w @zform/api && npm run build -w @zform/web",
@@ -25,4 +28,3 @@
     "node": ">=20"
   }
 }
-

@@ -149,6 +149,9 @@ model Department {
 model OcrRecognition {
   id               String   @id @default(uuid()) @db.Uuid
   userId           String   @map("user_id") @db.VarChar(64)
+  recognitionType  String   @default("PAYMENT") @map("recognition_type") @db.VarChar(20)
+  extractionMethod String?  @map("extraction_method") @db.VarChar(20)
+  qrRawText        String?  @map("qr_raw_text") @db.VarChar(1000)
   originalFilename String   @map("original_filename") @db.VarChar(255)
   mimeType         String   @map("mime_type") @db.VarChar(50)
   imageData        Bytes    @map("image_data")
@@ -161,6 +164,19 @@ model OcrRecognition {
   paymentStatus    String?  @map("payment_status") @db.VarChar(100)
   paymentMethod    String?  @map("payment_method") @db.VarChar(100)
   receiver         String?  @db.VarChar(255)
+  invoiceNumber    String?  @map("invoice_number") @db.VarChar(100)
+  invoiceDate      String?  @map("invoice_date") @db.VarChar(100)
+  buyerName        String?  @map("buyer_name") @db.VarChar(255)
+  buyerTaxId       String?  @map("buyer_tax_id") @db.VarChar(100)
+  sellerName       String?  @map("seller_name") @db.VarChar(255)
+  sellerTaxId      String?  @map("seller_tax_id") @db.VarChar(100)
+  subtotal         String?  @db.VarChar(100)
+  totalTax         String?  @map("total_tax") @db.VarChar(100)
+  totalAmount      String?  @map("total_amount") @db.VarChar(100)
+  totalAmountInWords String? @map("total_amount_in_words") @db.VarChar(100)
+  remarks          String?  @db.VarChar(1000)
+  drawer           String?  @db.VarChar(100)
+  invoiceItems     Json     @default("[]") @map("invoice_items") @db.JsonB
   rawJson          Json?    @map("raw_json") @db.JsonB
   model            String?  @db.VarChar(100)
   errorMessage     String?  @map("error_message") @db.VarChar(1000)
@@ -169,6 +185,8 @@ model OcrRecognition {
 
   @@index([userId, createdAt])
   @@index([userId, status])
+  @@index([userId, recognitionType, createdAt])
+  @@index([invoiceNumber])
   @@map("ocr_recognitions")
 }
 

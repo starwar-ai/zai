@@ -21,6 +21,7 @@
     "declaration:batch": "tsx src/scripts/build-declaration-name-batch.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.5",
     "@prisma/client": "^5.22.0",
     "@zform/shared": "*",
     "cors": "^2.8.5",
@@ -28,6 +29,8 @@
     "express": "^4.21.2",
     "fflate": "^0.8.3",
     "helmet": "^8.0.0",
+    "jsqr": "^1.4.0",
+    "pdfjs-dist": "^5.6.205",
     "swagger-ui-express": "^5.0.1",
     "tsx": "^4.20.6",
     "zod": "^3.25.76"
