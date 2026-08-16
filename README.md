@@ -263,7 +263,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 
 报关名称能力使用 `declaration-name:view`、`declaration-name:generate`、`declaration-name:review` 和 `declaration-name:writeback` 四个权限码；种子数据提供最小权限的 `DECLARATION_REVIEWER` 角色。
 
-支付截图自动识别和电子发票识别共用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。两类记录按识别类型分别查询，并且原件、删除和导出都会再次按当前用户 ID 与识别类型限定。
+导航截图识别、支付截图自动识别和电子发票识别共用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。三类记录按识别类型分别查询，并且原件、删除和导出都会再次按当前用户 ID 与识别类型限定。导航截图识别会提取当前选中路线的目的地、途经地、距离、通行费、置信度及选中依据。
 
 前端隐藏入口只用于交互，真正的写权限由 API 校验。内置 `SYSTEM_ADMIN` 角色和 `framework-user` 演示用户受删除保护。生产接入认证时，应由可信中间件确定 `x-user-id`，不要接受浏览器任意冒充用户。
 
@@ -282,6 +282,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `ARK_API_KEY` / `ARK_MODEL` / `ARK_BASE_URL`：火山方舟 OpenAI-compatible 配置
 - `OCR_PROVIDER` / `OCR_MODEL`：电子发票识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时完全回退到 `LLM_PROVIDER_ORDER` 和对应供应商的系统模型配置
 - `PAYMENT_OCR_MODEL`：支付截图识别的可选 OpenAI 模型；留空时使用 `OPENAI_MODEL`
+- `ROUTE_OCR_MODEL`：导航截图识别的可选 OpenAI Vision 模型；留空时使用 `OPENAI_MODEL`
 - `KIMI_API_KEY` / `KIMI_MODEL` / `KIMI_BASE_URL`：Kimi OpenAI-compatible 配置
 - `MINIMAX_API_KEY` / `MINIMAX_MODEL` / `MINIMAX_BASE_URL`：MiniMax Anthropic-compatible 配置
 - `AUTO_APPROVE_CONFIDENCE`：自动通过置信度，默认 `0.9`

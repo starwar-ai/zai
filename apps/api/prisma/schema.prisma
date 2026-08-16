@@ -164,6 +164,13 @@ model OcrRecognition {
   paymentStatus    String?  @map("payment_status") @db.VarChar(100)
   paymentMethod    String?  @map("payment_method") @db.VarChar(100)
   receiver         String?  @db.VarChar(255)
+  routeResultStatus String? @map("route_result_status") @db.VarChar(20)
+  distanceKm       Decimal? @map("distance_km") @db.Decimal(12, 2)
+  tollYuan         Decimal? @map("toll_yuan") @db.Decimal(12, 2)
+  destination      String?  @db.VarChar(240)
+  waypoints        Json     @default("[]") @db.JsonB
+  confidence       Decimal? @db.Decimal(5, 4)
+  selectedRouteEvidence String? @map("selected_route_evidence") @db.VarChar(1000)
   invoiceType      String?  @map("invoice_type") @db.VarChar(20)
   invoiceNumber    String?  @map("invoice_number") @db.VarChar(100)
   invoiceDate      String?  @map("invoice_date") @db.VarChar(100)

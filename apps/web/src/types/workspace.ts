@@ -8,6 +8,6 @@ export type WorkspaceView =
   | { kind: "help" }
   | { kind: "system"; entity: "menus" | "users" | "roles" | "departments" }
   | { kind: "declaration-name" }
-  | { kind: "ocr"; mode: "payment" | "invoice" }
+  | { kind: "ocr"; mode: "payment" | "invoice" | "navigation-route" }
 
 export interface WorkspaceTab { id: string; title: string; view: WorkspaceView; closable: boolean; dirty?: boolean; revision: number }

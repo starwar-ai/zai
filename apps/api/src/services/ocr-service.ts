@@ -1,19 +1,21 @@
 import { Prisma, type OcrRecognition } from "@prisma/client"
-import type { ExternalInvoiceBatchItemResult, ExternalInvoiceBatchRecognizeRequest, ExternalInvoiceBatchRecognizeResult, ExternalInvoiceRecognizeRequest, ExternalInvoiceRecognizeResult, ListResponse, OcrExportRequest, OcrExportResult, OcrInvoiceItem, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognizeRequest, OcrRecognizeResult } from "@zform/shared"
+import type { ExternalInvoiceBatchItemResult, ExternalInvoiceBatchRecognizeRequest, ExternalInvoiceBatchRecognizeResult, ExternalInvoiceRecognizeRequest, ExternalInvoiceRecognizeResult, ListResponse, OcrExportRequest, OcrExportResult, OcrInvoiceItem, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognitionType, OcrRecognizeRequest, OcrRecognizeResult, OcrRouteData } from "@zform/shared"
 import { prisma } from "../database.js"
 import { BusinessError } from "../utils/business-error.js"
 import { createXlsx } from "../utils/xlsx.js"
 import { recognizeInvoice } from "./ocr-provider.js"
 import { recognizePaymentScreenshot } from "./payment-ocr-provider.js"
+import { recognizeNavigationRoute } from "./route-ocr-provider.js"
 import { extractInvoicePdf, qrInvoiceData, type InvoiceQrResult } from "./invoice-qr-service.js"
 
 function invoiceItems(value: Prisma.JsonValue): OcrInvoiceItem[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((item) => item && typeof item === "object" && !Array.isArray(item) ? [Object.fromEntries(Object.entries(item).filter((entry): entry is [string, string] => typeof entry[1] === "string")) as OcrInvoiceItem] : [])
 }
+function routeWaypoints(value: Prisma.JsonValue): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [] }
 function toRecord(row: OcrRecognition): OcrRecognitionRecord {
   return {
-    id: row.id, recognitionType: row.recognitionType === "INVOICE" ? "INVOICE" : "PAYMENT", ...(row.extractionMethod === "QR" || row.extractionMethod === "AI" || row.extractionMethod === "HYBRID" ? { extractionMethod: row.extractionMethod } : {}), originalFilename: row.originalFilename, mimeType: row.mimeType,
+    id: row.id, recognitionType: row.recognitionType === "INVOICE" ? "INVOICE" : row.recognitionType === "NAVIGATION_ROUTE" ? "NAVIGATION_ROUTE" : "PAYMENT", ...(row.extractionMethod === "QR" || row.extractionMethod === "AI" || row.extractionMethod === "HYBRID" ? { extractionMethod: row.extractionMethod } : {}), originalFilename: row.originalFilename, mimeType: row.mimeType,
     status: row.status === "SUCCESS" ? "SUCCESS" : row.status === "FAILED" ? "FAILED" : "RECOGNIZING",
     ...(row.invoiceType === "VAT_NORMAL" || row.invoiceType === "VAT_SPECIAL" ? { invoiceType: row.invoiceType } : {}),
     ...(row.invoiceNumber ? { invoiceNumber: row.invoiceNumber } : {}), ...(row.invoiceDate ? { invoiceDate: row.invoiceDate } : {}),
@@ -21,9 +23,12 @@ function toRecord(row: OcrRecognition): OcrRecognitionRecord {
     ...(row.sellerName ? { sellerName: row.sellerName } : {}), ...(row.sellerTaxId ? { sellerTaxId: row.sellerTaxId } : {}),
     ...(row.subtotal ? { subtotal: row.subtotal } : {}), ...(row.totalTax ? { totalTax: row.totalTax } : {}),
     ...(row.totalAmount ? { totalAmount: row.totalAmount } : {}), ...(row.totalAmountInWords ? { totalAmountInWords: row.totalAmountInWords } : {}),
-    ...(row.remarks ? { remarks: row.remarks } : {}), ...(row.drawer ? { drawer: row.drawer } : {}), items: invoiceItems(row.invoiceItems),
+    ...(row.remarks ? { remarks: row.remarks } : {}), ...(row.drawer ? { drawer: row.drawer } : {}), items: invoiceItems(row.invoiceItems), waypoints: routeWaypoints(row.waypoints),
     ...(row.platform ? { platform: row.platform } : {}), ...(row.orderNo ? { orderNo: row.orderNo } : {}), ...(row.productName ? { productName: row.productName } : {}),
     ...(row.amount ? { amount: row.amount } : {}), ...(row.paymentTime ? { paymentTime: row.paymentTime } : {}), ...(row.paymentStatus ? { paymentStatus: row.paymentStatus } : {}), ...(row.paymentMethod ? { paymentMethod: row.paymentMethod } : {}), ...(row.receiver ? { receiver: row.receiver } : {}),
+    ...(row.routeResultStatus === "success" || row.routeResultStatus === "uncertain" || row.routeResultStatus === "not_found" ? { routeResultStatus: row.routeResultStatus } : {}),
+    ...(row.distanceKm !== null ? { distanceKm: Number(row.distanceKm) } : {}), ...(row.tollYuan !== null ? { tollYuan: Number(row.tollYuan) } : {}),
+    ...(row.destination ? { destination: row.destination } : {}), ...(row.confidence !== null ? { confidence: Number(row.confidence) } : {}), ...(row.selectedRouteEvidence ? { selectedRouteEvidence: row.selectedRouteEvidence } : {}),
     ...(row.errorMessage ? { errorMessage: row.errorMessage } : {}), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
   }
 }
@@ -38,19 +43,23 @@ export async function recognizeOcr(userId: string, input: OcrRecognizeRequest): 
   const fileData = Buffer.from(input.base64Data, "base64")
   if (!fileData.length) throw new BusinessError("文件内容为空。")
   if (fileData.length > 10 * 1024 * 1024) throw new BusinessError("单个文件不能超过 10MB。", 413)
-  if (input.recognitionType === "PAYMENT" && input.mimeType === "application/pdf") throw new BusinessError("支付截图仅支持 JPG、PNG 或 WebP 图片。")
+  if (input.recognitionType !== "INVOICE" && input.mimeType === "application/pdf") throw new BusinessError(input.recognitionType === "NAVIGATION_ROUTE" ? "导航截图仅支持 JPG、PNG 或 WebP 图片。" : "支付截图仅支持 JPG、PNG 或 WebP 图片。")
   const created = await prisma.ocrRecognition.create({ data: { userId, recognitionType: input.recognitionType, originalFilename: input.filename, mimeType: input.mimeType, imageData: fileData, status: "RECOGNIZING" } })
   try {
     let qr: InvoiceQrResult | null = null
     let pdfText: string | null = null
     const pdfExtraction = input.recognitionType === "INVOICE" && input.mimeType === "application/pdf" ? await extractInvoicePdf(new Uint8Array(fileData), true).catch(() => null) : null
     if (pdfExtraction) { qr = pdfExtraction.qr; pdfText = pdfExtraction.text }
-    const recognized = input.recognitionType === "INVOICE" ? await recognizeInvoice(input, { ...(pdfText ? { pdfText } : {}), ...(qr ? { qrText: qr.rawText } : {}), ...(pdfExtraction?.pageImageBase64 ? { pageImageBase64: pdfExtraction.pageImageBase64 } : {}) }) : await recognizePaymentScreenshot(input)
+    const recognized = input.recognitionType === "INVOICE"
+      ? await recognizeInvoice(input, { ...(pdfText ? { pdfText } : {}), ...(qr ? { qrText: qr.rawText } : {}), ...(pdfExtraction?.pageImageBase64 ? { pageImageBase64: pdfExtraction.pageImageBase64 } : {}) })
+      : input.recognitionType === "NAVIGATION_ROUTE" ? await recognizeNavigationRoute(input) : await recognizePaymentScreenshot(input)
     const sourceData = recognized.data
     const mergedData = qr && "items" in sourceData ? { ...sourceData, ...qrInvoiceData(qr), items: sourceData.items } : sourceData
     const data: Prisma.OcrRecognitionUpdateInput = "items" in mergedData
       ? (() => { const { items, ...headers } = mergedData; return { ...headers, invoiceItems: items as unknown as Prisma.InputJsonArray } })()
-      : mergedData
+      : "waypoints" in mergedData
+        ? (() => { const { waypoints, ...route } = mergedData as OcrRouteData; return { ...route, waypoints: waypoints as Prisma.InputJsonArray } })()
+        : mergedData
     const extractionMethod = qr ? "HYBRID" : "AI"
     const qrMetadata = qr ? Object.fromEntries(Object.entries({ invoiceCode: qr.invoiceCode, invoiceNumber: qr.invoiceNumber, subtotal: qr.subtotal, invoiceDate: qr.invoiceDate, checkCode: qr.checkCode }).filter((entry) => entry[1] !== undefined)) : undefined
     const rawJson = { ...recognized.raw, ...(qrMetadata ? { qr: qrMetadata } : {}), ...(pdfText ? { pdfTextLength: pdfText.length } : {}) }
@@ -90,7 +99,7 @@ export async function recognizeExternalInvoicesBatch(actor: string, input: Exter
 
 export async function queryOcrRecognitions(userId: string, input: OcrRecognitionQuery): Promise<ListResponse<OcrRecognitionRecord>> {
   const page = input.page || 1; const pageSize = input.pageSize || 20; const keyword = input.keyword?.trim(); const createdAt = dateWhere(input)
-  const fields = input.recognitionType === "INVOICE" ? ["invoiceType", "invoiceNumber", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "totalAmount", "originalFilename"] : ["platform", "orderNo", "productName", "amount", "receiver", "originalFilename"]
+  const fields = input.recognitionType === "INVOICE" ? ["invoiceType", "invoiceNumber", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "totalAmount", "originalFilename"] : input.recognitionType === "NAVIGATION_ROUTE" ? ["destination", "selectedRouteEvidence", "originalFilename"] : ["platform", "orderNo", "productName", "amount", "receiver", "originalFilename"]
   const keywordFilters: Prisma.OcrRecognitionWhereInput[] = keyword ? fields.map((field) => ({ [field]: { contains: keyword, mode: "insensitive" } })) : []
   if (input.recognitionType === "INVOICE" && keyword?.includes("专用")) keywordFilters.push({ invoiceType: "VAT_SPECIAL" })
   if (input.recognitionType === "INVOICE" && keyword?.includes("普通")) keywordFilters.push({ invoiceType: "VAT_NORMAL" })
@@ -98,14 +107,15 @@ export async function queryOcrRecognitions(userId: string, input: OcrRecognition
   const [items, total] = await Promise.all([prisma.ocrRecognition.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }), prisma.ocrRecognition.count({ where })])
   return { items: items.map(toRecord), total, page, pageSize, pageCount: Math.max(1, Math.ceil(total / pageSize)) }
 }
-export async function getOcrRecognition(userId: string, recognitionType: "PAYMENT" | "INVOICE", id: string): Promise<OcrRecognitionRecord> { const row = await prisma.ocrRecognition.findFirst({ where: { id, userId, recognitionType } }); if (!row) throw new BusinessError("识别记录不存在。", 404); return toRecord(row) }
-export async function getOcrImage(userId: string, recognitionType: "PAYMENT" | "INVOICE", id: string): Promise<{ mimeType: string; data: Uint8Array }> { const row = await prisma.ocrRecognition.findFirst({ where: { id, userId, recognitionType }, select: { mimeType: true, imageData: true } }); if (!row) throw new BusinessError("识别文件不存在。", 404); return { mimeType: row.mimeType, data: row.imageData } }
-export async function removeOcrRecognition(userId: string, recognitionType: "PAYMENT" | "INVOICE", id: string): Promise<void> { const result = await prisma.ocrRecognition.deleteMany({ where: { id, userId, recognitionType } }); if (!result.count) throw new BusinessError("识别记录不存在。", 404) }
+export async function getOcrRecognition(userId: string, recognitionType: OcrRecognitionType, id: string): Promise<OcrRecognitionRecord> { const row = await prisma.ocrRecognition.findFirst({ where: { id, userId, recognitionType } }); if (!row) throw new BusinessError("识别记录不存在。", 404); return toRecord(row) }
+export async function getOcrImage(userId: string, recognitionType: OcrRecognitionType, id: string): Promise<{ mimeType: string; data: Uint8Array }> { const row = await prisma.ocrRecognition.findFirst({ where: { id, userId, recognitionType }, select: { mimeType: true, imageData: true } }); if (!row) throw new BusinessError("识别文件不存在。", 404); return { mimeType: row.mimeType, data: row.imageData } }
+export async function removeOcrRecognition(userId: string, recognitionType: OcrRecognitionType, id: string): Promise<void> { const result = await prisma.ocrRecognition.deleteMany({ where: { id, userId, recognitionType } }); if (!result.count) throw new BusinessError("识别记录不存在。", 404) }
 
 export async function exportOcrRecognitions(userId: string, input: OcrExportRequest): Promise<OcrExportResult> {
   const createdAt = dateWhere(input)
   const records = await prisma.ocrRecognition.findMany({ where: { userId, recognitionType: input.recognitionType, status: "SUCCESS", ...(input.ids?.length ? { id: { in: input.ids } } : {}), ...(createdAt ? { createdAt } : {}) }, orderBy: { createdAt: "desc" }, take: 5000 })
   const invoice = input.recognitionType === "INVOICE"
+  const navigationRoute = input.recognitionType === "NAVIGATION_ROUTE"
   const invoiceRows = records.flatMap((row, recordIndex) => {
     const items = invoiceItems(row.invoiceItems)
     const exportItems: Array<OcrInvoiceItem | undefined> = items.length ? items : [undefined]
@@ -118,7 +128,7 @@ export async function exportOcrRecognitions(userId: string, input: OcrExportRequ
       row.drawer, row.remarks, row.originalFilename, row.createdAt.toLocaleString("zh-CN"),
     ])
   })
-  const rows: unknown[][] = invoice ? [["发票序号", "明细序号", "发票类型", "发票号码", "开票日期", "购买方", "购买方税号", "销售方", "销售方税号", "商品名称", "规格型号", "单位", "数量", "单价", "明细金额", "税率", "明细税额", "金额合计", "税额合计", "价税合计", "价税合计（大写）", "开票人", "备注", "文件名", "识别时间"], ...invoiceRows] : [["序号", "平台", "订单号", "商品名称", "支付金额", "支付时间", "支付状态", "支付方式", "收款方", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.platform, row.orderNo, row.productName, row.amount, row.paymentTime, row.paymentStatus, row.paymentMethod, row.receiver, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])]
-  const label = invoice ? "电子发票识别" : "支付截图识别"; const buffer = createXlsx(label, rows)
+  const rows: unknown[][] = invoice ? [["发票序号", "明细序号", "发票类型", "发票号码", "开票日期", "购买方", "购买方税号", "销售方", "销售方税号", "商品名称", "规格型号", "单位", "数量", "单价", "明细金额", "税率", "明细税额", "金额合计", "税额合计", "价税合计", "价税合计（大写）", "开票人", "备注", "文件名", "识别时间"], ...invoiceRows] : navigationRoute ? [["序号", "识别结论", "目的地", "途经地", "距离（公里）", "通行费（元）", "置信度", "选中路线依据", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.routeResultStatus, row.destination, routeWaypoints(row.waypoints).join(" → "), row.distanceKm, row.tollYuan, row.confidence, row.selectedRouteEvidence, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])] : [["序号", "平台", "订单号", "商品名称", "支付金额", "支付时间", "支付状态", "支付方式", "收款方", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.platform, row.orderNo, row.productName, row.amount, row.paymentTime, row.paymentStatus, row.paymentMethod, row.receiver, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])]
+  const label = invoice ? "电子发票识别" : navigationRoute ? "导航截图识别" : "支付截图识别"; const buffer = createXlsx(label, rows)
   return { base64: buffer.toString("base64"), filename: `${label}_${new Date().toISOString().slice(0, 10)}.xlsx`, count: records.length }
 }

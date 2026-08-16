@@ -376,13 +376,15 @@ export interface DepartmentInput { code: string; name: string; parentId?: string
 export interface SystemManagementData { menus: SystemMenuRecord[]; roles: RoleRecord[]; users: UserRecord[]; departments: DepartmentRecord[] }
 
 export type OcrRecognitionStatus = "RECOGNIZING" | "SUCCESS" | "FAILED"
-export type OcrRecognitionType = "PAYMENT" | "INVOICE"
+export type OcrRecognitionType = "PAYMENT" | "INVOICE" | "NAVIGATION_ROUTE"
 export interface OcrPaymentData { platform?: string; orderNo?: string; productName?: string; amount?: string; paymentTime?: string; paymentStatus?: string; paymentMethod?: string; receiver?: string }
+export type OcrRouteResultStatus = "success" | "uncertain" | "not_found"
+export interface OcrRouteData { routeResultStatus?: OcrRouteResultStatus; distanceKm?: number; tollYuan?: number; destination?: string; waypoints: string[]; confidence?: number; selectedRouteEvidence?: string }
 export interface OcrInvoiceItem { itemName?: string; specification?: string; unit?: string; quantity?: string; unitPrice?: string; amount?: string; taxRate?: string; taxAmount?: string }
 export type OcrInvoiceType = "VAT_NORMAL" | "VAT_SPECIAL"
 export interface OcrInvoiceData { invoiceType?: OcrInvoiceType; invoiceNumber?: string; invoiceDate?: string; buyerName?: string; buyerTaxId?: string; sellerName?: string; sellerTaxId?: string; subtotal?: string; totalTax?: string; totalAmount?: string; totalAmountInWords?: string; remarks?: string; drawer?: string; items: OcrInvoiceItem[] }
 export type OcrExtractionMethod = "QR" | "AI" | "HYBRID"
-export interface OcrRecognitionRecord extends OcrInvoiceData, OcrPaymentData { id: string; recognitionType: OcrRecognitionType; extractionMethod?: OcrExtractionMethod; originalFilename: string; mimeType: string; status: OcrRecognitionStatus; errorMessage?: string; createdAt: string; updatedAt: string }
+export interface OcrRecognitionRecord extends OcrInvoiceData, OcrPaymentData, OcrRouteData { id: string; recognitionType: OcrRecognitionType; extractionMethod?: OcrExtractionMethod; originalFilename: string; mimeType: string; status: OcrRecognitionStatus; errorMessage?: string; createdAt: string; updatedAt: string }
 export interface OcrRecognizeRequest { recognitionType: OcrRecognitionType; filename: string; mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
 export interface OcrRecognizeResult { record: OcrRecognitionRecord; success: boolean }
 export interface OcrRecognitionQuery { recognitionType: OcrRecognitionType; keyword?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number }
