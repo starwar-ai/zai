@@ -15,6 +15,7 @@ function toRecord(row: OcrRecognition): OcrRecognitionRecord {
   return {
     id: row.id, recognitionType: row.recognitionType === "INVOICE" ? "INVOICE" : "PAYMENT", ...(row.extractionMethod === "QR" || row.extractionMethod === "AI" || row.extractionMethod === "HYBRID" ? { extractionMethod: row.extractionMethod } : {}), originalFilename: row.originalFilename, mimeType: row.mimeType,
     status: row.status === "SUCCESS" ? "SUCCESS" : row.status === "FAILED" ? "FAILED" : "RECOGNIZING",
+    ...(row.invoiceType === "VAT_NORMAL" || row.invoiceType === "VAT_SPECIAL" ? { invoiceType: row.invoiceType } : {}),
     ...(row.invoiceNumber ? { invoiceNumber: row.invoiceNumber } : {}), ...(row.invoiceDate ? { invoiceDate: row.invoiceDate } : {}),
     ...(row.buyerName ? { buyerName: row.buyerName } : {}), ...(row.buyerTaxId ? { buyerTaxId: row.buyerTaxId } : {}),
     ...(row.sellerName ? { sellerName: row.sellerName } : {}), ...(row.sellerTaxId ? { sellerTaxId: row.sellerTaxId } : {}),
@@ -67,6 +68,7 @@ export async function recognizeExternalInvoice(actor: string, input: ExternalInv
   if (!result.success) throw new BusinessError(result.record.errorMessage || "电子发票识别失败。", 422)
   return {
     recognitionId: result.record.id, originalFilename: result.record.originalFilename,
+    ...(result.record.invoiceType ? { invoiceType: result.record.invoiceType } : {}),
     ...(result.record.extractionMethod ? { extractionMethod: result.record.extractionMethod } : {}),
     ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
     ...(result.record.invoiceNumber ? { invoiceNumber: result.record.invoiceNumber } : {}), ...(result.record.invoiceDate ? { invoiceDate: result.record.invoiceDate } : {}),
@@ -88,8 +90,11 @@ export async function recognizeExternalInvoicesBatch(actor: string, input: Exter
 
 export async function queryOcrRecognitions(userId: string, input: OcrRecognitionQuery): Promise<ListResponse<OcrRecognitionRecord>> {
   const page = input.page || 1; const pageSize = input.pageSize || 20; const keyword = input.keyword?.trim(); const createdAt = dateWhere(input)
-  const fields = input.recognitionType === "INVOICE" ? ["invoiceNumber", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "totalAmount", "originalFilename"] : ["platform", "orderNo", "productName", "amount", "receiver", "originalFilename"]
-  const where: Prisma.OcrRecognitionWhereInput = { userId, recognitionType: input.recognitionType, ...(createdAt ? { createdAt } : {}), ...(keyword ? { OR: fields.map((field) => ({ [field]: { contains: keyword, mode: "insensitive" } })) } : {}) }
+  const fields = input.recognitionType === "INVOICE" ? ["invoiceType", "invoiceNumber", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "totalAmount", "originalFilename"] : ["platform", "orderNo", "productName", "amount", "receiver", "originalFilename"]
+  const keywordFilters: Prisma.OcrRecognitionWhereInput[] = keyword ? fields.map((field) => ({ [field]: { contains: keyword, mode: "insensitive" } })) : []
+  if (input.recognitionType === "INVOICE" && keyword?.includes("专用")) keywordFilters.push({ invoiceType: "VAT_SPECIAL" })
+  if (input.recognitionType === "INVOICE" && keyword?.includes("普通")) keywordFilters.push({ invoiceType: "VAT_NORMAL" })
+  const where: Prisma.OcrRecognitionWhereInput = { userId, recognitionType: input.recognitionType, ...(createdAt ? { createdAt } : {}), ...(keywordFilters.length ? { OR: keywordFilters } : {}) }
   const [items, total] = await Promise.all([prisma.ocrRecognition.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }), prisma.ocrRecognition.count({ where })])
   return { items: items.map(toRecord), total, page, pageSize, pageCount: Math.max(1, Math.ceil(total / pageSize)) }
 }
@@ -105,7 +110,7 @@ export async function exportOcrRecognitions(userId: string, input: OcrExportRequ
     const items = invoiceItems(row.invoiceItems)
     const exportItems: Array<OcrInvoiceItem | undefined> = items.length ? items : [undefined]
     return exportItems.map((item, itemIndex) => [
-      recordIndex + 1, itemIndex + 1, row.invoiceNumber, row.invoiceDate,
+      recordIndex + 1, itemIndex + 1, row.invoiceType === "VAT_SPECIAL" ? "增值税专用发票" : row.invoiceType === "VAT_NORMAL" ? "普通发票" : undefined, row.invoiceNumber, row.invoiceDate,
       row.buyerName, row.buyerTaxId, row.sellerName, row.sellerTaxId,
       item?.itemName, item?.specification, item?.unit, item?.quantity,
       item?.unitPrice, item?.amount, item?.taxRate, item?.taxAmount,
@@ -113,7 +118,7 @@ export async function exportOcrRecognitions(userId: string, input: OcrExportRequ
       row.drawer, row.remarks, row.originalFilename, row.createdAt.toLocaleString("zh-CN"),
     ])
   })
-  const rows: unknown[][] = invoice ? [["发票序号", "明细序号", "发票号码", "开票日期", "购买方", "购买方税号", "销售方", "销售方税号", "商品名称", "规格型号", "单位", "数量", "单价", "明细金额", "税率", "明细税额", "金额合计", "税额合计", "价税合计", "价税合计（大写）", "开票人", "备注", "文件名", "识别时间"], ...invoiceRows] : [["序号", "平台", "订单号", "商品名称", "支付金额", "支付时间", "支付状态", "支付方式", "收款方", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.platform, row.orderNo, row.productName, row.amount, row.paymentTime, row.paymentStatus, row.paymentMethod, row.receiver, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])]
+  const rows: unknown[][] = invoice ? [["发票序号", "明细序号", "发票类型", "发票号码", "开票日期", "购买方", "购买方税号", "销售方", "销售方税号", "商品名称", "规格型号", "单位", "数量", "单价", "明细金额", "税率", "明细税额", "金额合计", "税额合计", "价税合计", "价税合计（大写）", "开票人", "备注", "文件名", "识别时间"], ...invoiceRows] : [["序号", "平台", "订单号", "商品名称", "支付金额", "支付时间", "支付状态", "支付方式", "收款方", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.platform, row.orderNo, row.productName, row.amount, row.paymentTime, row.paymentStatus, row.paymentMethod, row.receiver, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])]
   const label = invoice ? "电子发票识别" : "支付截图识别"; const buffer = createXlsx(label, rows)
   return { base64: buffer.toString("base64"), filename: `${label}_${new Date().toISOString().slice(0, 10)}.xlsx`, count: records.length }
 }

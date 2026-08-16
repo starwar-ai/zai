@@ -164,6 +164,7 @@ model OcrRecognition {
   paymentStatus    String?  @map("payment_status") @db.VarChar(100)
   paymentMethod    String?  @map("payment_method") @db.VarChar(100)
   receiver         String?  @db.VarChar(255)
+  invoiceType      String?  @map("invoice_type") @db.VarChar(20)
   invoiceNumber    String?  @map("invoice_number") @db.VarChar(100)
   invoiceDate      String?  @map("invoice_date") @db.VarChar(100)
   buyerName        String?  @map("buyer_name") @db.VarChar(255)

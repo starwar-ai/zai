@@ -3,19 +3,22 @@ import { z } from "zod"
 import { configuredLlmProviders, llmProviderConfig, type LlmProviderConfig } from "./llm-provider-config.js"
 
 const nullableText = z.string().nullable()
+const nullableInvoiceType = z.enum(["VAT_NORMAL", "VAT_SPECIAL"]).nullable()
 const invoiceItemSchema = z.object({ itemName: nullableText, specification: nullableText, unit: nullableText, quantity: nullableText, unitPrice: nullableText, amount: nullableText, taxRate: nullableText, taxAmount: nullableText }).strict()
 const invoiceDataSchema = z.object({
-  invoiceNumber: nullableText, invoiceDate: nullableText, buyerName: nullableText, buyerTaxId: nullableText, sellerName: nullableText, sellerTaxId: nullableText,
+  invoiceType: nullableInvoiceType, invoiceNumber: nullableText, invoiceDate: nullableText, buyerName: nullableText, buyerTaxId: nullableText, sellerName: nullableText, sellerTaxId: nullableText,
   subtotal: nullableText, totalTax: nullableText, totalAmount: nullableText, totalAmountInWords: nullableText, remarks: nullableText, drawer: nullableText,
   items: z.array(invoiceItemSchema).max(200),
 }).strict()
 
 const nullableString = { anyOf: [{ type: "string" }, { type: "null" }] } as const
+const nullableInvoiceTypeSchema = { anyOf: [{ type: "string", enum: ["VAT_NORMAL", "VAT_SPECIAL"] }, { type: "null" }] } as const
 const itemKeys = ["itemName", "specification", "unit", "quantity", "unitPrice", "amount", "taxRate", "taxAmount"] as const
 const headerKeys = ["invoiceNumber", "invoiceDate", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "subtotal", "totalTax", "totalAmount", "totalAmountInWords", "remarks", "drawer"] as const
 const outputSchema = {
-  type: "object", additionalProperties: false, required: [...headerKeys, "items"],
+  type: "object", additionalProperties: false, required: ["invoiceType", ...headerKeys, "items"],
   properties: {
+    invoiceType: nullableInvoiceTypeSchema,
     ...Object.fromEntries(headerKeys.map((key) => [key, nullableString])),
     items: { type: "array", items: { type: "object", additionalProperties: false, required: itemKeys, properties: Object.fromEntries(itemKeys.map((key) => [key, nullableString])) } },
   },
@@ -42,7 +45,7 @@ function extractJson(output: string): unknown {
 }
 function compactItem(item: z.infer<typeof invoiceItemSchema>): OcrInvoiceItem { return Object.fromEntries(Object.entries(item).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1].trim()))) as OcrInvoiceItem }
 
-/** 购销方与至少一条有名称的明细是可用发票结果的最低要求；税号、备注允许票面为空。 */
+/** 购销方与至少一条有名称的明细是可用发票结果的最低要求；票种、税号、备注允许票面无法明确识别。 */
 export function assertCompleteInvoice(data: OcrInvoiceData): void {
   const missing: string[] = []
   if (!data.buyerName?.trim()) missing.push("购买方名称")
@@ -79,8 +82,8 @@ export async function recognizeInvoice(input: OcrRecognizeRequest, context: Invo
   const qrContent = context.qrText ? [{ type: "input_text", text: `发票二维码原文（仅用于校验发票号码、日期和金额等核心字段，不包含购销方、明细和备注）：${context.qrText}` }] : []
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const systemText = "你是专业的中国电子发票识别助手。只提取发票中明确存在的信息，不得猜测。必须仔细识别购买方和销售方的名称、纳税人识别号，逐行提取全部货物、服务或应税劳务明细，并提取备注栏原文。金额、税率和日期保留票面格式；票面没有税号、备注或其他字段时返回 null，不得用推测内容填充。"
-    const userText = `完整识别这份发票。重点确保购买方、销售方、全部商品明细和备注没有遗漏，同时提取发票号码、开票日期、双方税号、金额税额合计、价税合计大小写和开票人。${context.qrText ? `\n发票二维码原文（仅用于校验核心字段）：${context.qrText}` : ""}${context.pdfText ? `\n以下是原生 PDF 文本层：\n${context.pdfText}` : ""}`
+    const systemText = "你是专业的中国电子发票识别助手。只提取发票中明确存在的信息，不得猜测。必须根据票面标题判定发票类型：增值税专用发票返回 VAT_SPECIAL，普通发票（包括增值税普通发票）返回 VAT_NORMAL。必须仔细识别购买方和销售方的名称、纳税人识别号，逐行提取全部货物、服务或应税劳务明细，并提取备注栏原文。金额、税率和日期保留票面格式；票面没有税号、备注或其他字段时返回 null，不得用推测内容填充。"
+    const userText = `完整识别这份发票。先区分普通发票与增值税专用发票，再确保购买方、销售方、全部商品明细和备注没有遗漏，同时提取发票号码、开票日期、双方税号、金额税额合计、价税合计大小写和开票人。${context.qrText ? `\n发票二维码原文（仅用于校验核心字段）：${context.qrText}` : ""}${context.pdfText ? `\n以下是原生 PDF 文本层：\n${context.pdfText}` : ""}`
     let endpoint = `${baseUrl}/responses`
     let body: Record<string, unknown> = { model, input: [{ role: "system", content: [{ type: "input_text", text: systemText }] }, { role: "user", content: [{ type: "input_text", text: userText }, ...qrContent, fileContent] }], text: { format: { type: "json_schema", name: "electronic_invoice", strict: true, schema: outputSchema } } }
     if (provider.mode === "chat-json-schema") {
