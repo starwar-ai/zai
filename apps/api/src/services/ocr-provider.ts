@@ -1,6 +1,7 @@
 import type { OcrInvoiceData, OcrInvoiceItem, OcrRecognizeRequest } from "@zform/shared"
 import { z } from "zod"
 import { configuredLlmProviders, llmProviderConfig, type LlmProviderConfig } from "./llm-provider-config.js"
+import { llmHttpError, llmNetworkError } from "./llm-error-detail.js"
 
 const nullableText = z.string().nullable()
 const nullableInvoiceType = z.enum(["VAT_NORMAL", "VAT_SPECIAL"]).nullable()
@@ -56,6 +57,24 @@ export function assertCompleteInvoice(data: OcrInvoiceData): void {
 
 export interface InvoiceRecognitionContext { pdfText?: string; qrText?: string; pageImageBase64?: string }
 
+const PROVIDER_NETWORK_ATTEMPTS = 2
+
+async function fetchInvoiceProvider(endpoint: string, request: RequestInit, provider: string, model: string, timeoutMs: number): Promise<Response> {
+  for (let attempt = 1; attempt <= PROVIDER_NETWORK_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      return await fetch(endpoint, { ...request, signal: controller.signal })
+    } catch (reason) {
+      if (controller.signal.aborted) throw llmNetworkError(reason, { provider, model, operation: "发票识别" }, true)
+      if (attempt === PROVIDER_NETWORK_ATTEMPTS) throw llmNetworkError(reason, { provider, model, operation: "发票识别" }, false)
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+  throw new Error(`${provider} 发票识别网络连接失败，请稍后重试`)
+}
+
 function invoiceProvider(): LlmProviderConfig {
   const configuredProvider = process.env.OCR_PROVIDER?.trim().toLowerCase()
   const moduleModel = process.env.OCR_MODEL?.trim()
@@ -80,29 +99,26 @@ export async function recognizeInvoice(input: OcrRecognizeRequest, context: Invo
     ? { type: "input_file", filename: input.filename, file_data: `data:application/pdf;base64,${input.base64Data}` }
     : { type: "input_image", image_url: `data:${input.mimeType};base64,${input.base64Data}`, detail: "high" }
   const qrContent = context.qrText ? [{ type: "input_text", text: `发票二维码原文（仅用于校验发票号码、日期和金额等核心字段，不包含购销方、明细和备注）：${context.qrText}` }] : []
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const systemText = "你是专业的中国电子发票识别助手。只提取发票中明确存在的信息，不得猜测。必须根据票面标题判定发票类型：增值税专用发票返回 VAT_SPECIAL，普通发票（包括增值税普通发票）返回 VAT_NORMAL。必须仔细识别购买方和销售方的名称、纳税人识别号，逐行提取全部货物、服务或应税劳务明细，并提取备注栏原文。金额、税率和日期保留票面格式；票面没有税号、备注或其他字段时返回 null，不得用推测内容填充。"
-    const userText = `完整识别这份发票。先区分普通发票与增值税专用发票，再确保购买方、销售方、全部商品明细和备注没有遗漏，同时提取发票号码、开票日期、双方税号、金额税额合计、价税合计大小写和开票人。${context.qrText ? `\n发票二维码原文（仅用于校验核心字段）：${context.qrText}` : ""}${context.pdfText ? `\n以下是原生 PDF 文本层：\n${context.pdfText}` : ""}`
-    let endpoint = `${baseUrl}/responses`
-    let body: Record<string, unknown> = { model, input: [{ role: "system", content: [{ type: "input_text", text: systemText }] }, { role: "user", content: [{ type: "input_text", text: userText }, ...qrContent, fileContent] }], text: { format: { type: "json_schema", name: "electronic_invoice", strict: true, schema: outputSchema } } }
-    if (provider.mode === "chat-json-schema") {
-      endpoint = `${baseUrl}/chat/completions`
-      const imageUrl = input.mimeType === "application/pdf" ? context.pageImageBase64 && `data:image/png;base64,${context.pageImageBase64}` : `data:${input.mimeType};base64,${input.base64Data}`
-      if (input.mimeType === "application/pdf" && !context.pdfText && !imageUrl) throw new Error("PDF 没有可提取文本，且首页图像转换失败，无法使用方舟视觉模型识别")
-      const userContent: Array<Record<string, unknown>> = [{ type: "text", text: userText }]
-      if (imageUrl) userContent.push({ type: "image_url", image_url: { url: imageUrl } })
-      body = { model, messages: [{ role: "system", content: systemText }, { role: "user", content: userContent }], temperature: provider.temperature, response_format: { type: "json_schema", json_schema: { name: "electronic_invoice", strict: true, schema: outputSchema } } }
-    }
-    const response = await fetch(endpoint, { method: "POST", signal: controller.signal, headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) })
-    if (!response.ok) { const errorText = await response.text(); throw new Error(`${provider.provider} 发票识别失败（HTTP ${response.status}）：${errorText.slice(0, 300)}`) }
-    const payload = await response.json() as unknown
-    const output = provider.mode === "responses" ? extractOutputText(payload) : extractChatText(payload)
-    const parsed = invoiceDataSchema.parse(extractJson(output))
-    const raw = parsed as unknown as Record<string, unknown>
-    const headers = Object.fromEntries(Object.entries(parsed).filter(([key, value]) => key !== "items" && typeof value === "string" && Boolean(value.trim())))
-    const data = { ...headers, items: parsed.items.map(compactItem) } as OcrInvoiceData
-    assertCompleteInvoice(data)
-    return { data, raw: { ...raw, provider: provider.provider }, model }
-  } finally { clearTimeout(timeout) }
+  const systemText = "你是专业的中国电子发票识别助手。只提取发票中明确存在的信息，不得猜测。必须根据票面标题判定发票类型：增值税专用发票返回 VAT_SPECIAL，普通发票（包括增值税普通发票）返回 VAT_NORMAL。必须仔细识别购买方和销售方的名称、纳税人识别号，逐行提取全部货物、服务或应税劳务明细，并提取备注栏原文。金额、税率和日期保留票面格式；票面没有税号、备注或其他字段时返回 null，不得用推测内容填充。"
+  const userText = `完整识别这份发票。先区分普通发票与增值税专用发票，再确保购买方、销售方、全部商品明细和备注没有遗漏，同时提取发票号码、开票日期、双方税号、金额税额合计、价税合计大小写和开票人。${context.qrText ? `\n发票二维码原文（仅用于校验核心字段）：${context.qrText}` : ""}${context.pdfText ? `\n以下是原生 PDF 文本层：\n${context.pdfText}` : ""}`
+  let endpoint = `${baseUrl}/responses`
+  let body: Record<string, unknown> = { model, input: [{ role: "system", content: [{ type: "input_text", text: systemText }] }, { role: "user", content: [{ type: "input_text", text: userText }, ...qrContent, fileContent] }], text: { format: { type: "json_schema", name: "electronic_invoice", strict: true, schema: outputSchema } } }
+  if (provider.mode === "chat-json-schema") {
+    endpoint = `${baseUrl}/chat/completions`
+    const imageUrl = input.mimeType === "application/pdf" ? context.pageImageBase64 && `data:image/png;base64,${context.pageImageBase64}` : `data:${input.mimeType};base64,${input.base64Data}`
+    if (input.mimeType === "application/pdf" && !context.pdfText && !imageUrl) throw new Error("PDF 没有可提取文本，且首页图像转换失败，无法使用方舟视觉模型识别")
+    const userContent: Array<Record<string, unknown>> = [{ type: "text", text: userText }]
+    if (imageUrl) userContent.push({ type: "image_url", image_url: { url: imageUrl } })
+    body = { model, messages: [{ role: "system", content: systemText }, { role: "user", content: userContent }], temperature: provider.temperature, response_format: { type: "json_schema", json_schema: { name: "electronic_invoice", strict: true, schema: outputSchema } } }
+  }
+  const response = await fetchInvoiceProvider(endpoint, { method: "POST", headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) }, provider.provider, model, timeoutMs)
+  if (!response.ok) throw await llmHttpError(response, { provider: provider.provider, model, operation: "发票识别" })
+  const payload = await response.json() as unknown
+  const output = provider.mode === "responses" ? extractOutputText(payload) : extractChatText(payload)
+  const parsed = invoiceDataSchema.parse(extractJson(output))
+  const raw = parsed as unknown as Record<string, unknown>
+  const headers = Object.fromEntries(Object.entries(parsed).filter(([key, value]) => key !== "items" && typeof value === "string" && Boolean(value.trim())))
+  const data = { ...headers, items: parsed.items.map(compactItem) } as OcrInvoiceData
+  assertCompleteInvoice(data)
+  return { data, raw: { ...raw, provider: provider.provider }, model }
 }

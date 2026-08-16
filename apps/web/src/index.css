@@ -513,4 +513,6 @@ input, select, textarea, button, label { font-size: 12px; }
 .ocr-history .ui-table td { font-size: 11px; }
 .ocr-history .ui-table code { max-width: 160px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocr-history .ui-badge svg { width: 11px; }
+.ocr-history-status { min-width: 210px; max-width: 360px; display: grid; justify-items: start; gap: 6px; }
+.ocr-history-status p { margin: 0; color: #b42318; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; white-space: normal; }
 @media (max-width: 1000px) { .ocr-history-toolbar { flex-wrap: wrap; }.ocr-detail { grid-template-columns: 1fr; }.ocr-upload-summary { grid-template-columns: 100px 100px minmax(0,1fr); } }

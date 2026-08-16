@@ -20,6 +20,27 @@ describe("electronic invoice OCR provider", () => {
     expect(body.input[1]?.content[1]?.image_url).toBe("data:image/png;base64,aW1hZ2U=")
   })
 
+  it("retries a transient provider network failure once", async () => {
+    process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
+    const output = { invoiceType: "VAT_NORMAL", invoiceNumber: "25800001", invoiceDate: "2026-08-13", buyerName: "购买方", buyerTaxId: null, sellerName: "销售方", sellerTaxId: null, subtotal: "1.00", totalTax: "0.06", totalAmount: "1.06", totalAmountInWords: null, remarks: null, drawer: null, items: [{ itemName: "服务", specification: null, unit: null, quantity: "1", unitPrice: "1", amount: "1", taxRate: "6%", taxAmount: "0.06" }] }
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ output: [{ content: [{ type: "output_text", text: JSON.stringify(output) }] }] }) })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await recognizeInvoice({ recognitionType: "INVOICE", filename: "invoice.png", mimeType: "image/png", base64Data: "aW1hZ2U=" })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.data).toMatchObject({ buyerName: "购买方", sellerName: "销售方" })
+  })
+
+  it("reports structured provider error details", async () => {
+    process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"; process.env.OPENAI_MODEL = "ocr-model"
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { message: "图片格式不受支持", type: "invalid_request_error", code: "invalid_image", param: "input[1]" } }), { status: 400, statusText: "Bad Request", headers: { "x-request-id": "req-ocr-123" } })))
+
+    await expect(recognizeInvoice({ recognitionType: "INVOICE", filename: "invoice.png", mimeType: "image/png", base64Data: "aW1hZ2U=" })).rejects.toThrow("openai 发票识别失败（模型：ocr-model，HTTP 400 Bad Request）：图片格式不受支持；类型：invalid_request_error；代码：invalid_image；参数：input[1]；请求 ID：req-ocr-123")
+  })
+
   it("uses extracted PDF text instead of uploading the original PDF", async () => {
     process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
     const empty = { invoiceType: "VAT_NORMAL", invoiceNumber: null, invoiceDate: null, buyerName: null, buyerTaxId: null, sellerName: null, sellerTaxId: null, subtotal: null, totalTax: null, totalAmount: null, totalAmountInWords: null, remarks: null, drawer: null, items: [] }

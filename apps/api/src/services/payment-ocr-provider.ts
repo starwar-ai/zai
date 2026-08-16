@@ -1,5 +1,6 @@
 import type { OcrPaymentData, OcrRecognizeRequest } from "@zform/shared"
 import { z } from "zod"
+import { llmHttpError, llmNetworkError } from "./llm-error-detail.js"
 
 const keys = ["platform", "orderNo", "productName", "amount", "paymentTime", "paymentStatus", "paymentMethod", "receiver"] as const
 const paymentSchema = z.object({ platform: z.string().nullable(), orderNo: z.string().nullable(), productName: z.string().nullable(), amount: z.string().nullable(), paymentTime: z.string().nullable(), paymentStatus: z.string().nullable(), paymentMethod: z.string().nullable(), receiver: z.string().nullable() }).strict()
@@ -13,8 +14,13 @@ export async function recognizePaymentScreenshot(input: OcrRecognizeRequest): Pr
   const configuredTimeout = Number(process.env.LLM_TIMEOUT_MS); const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60_000
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(`${baseUrl}/responses`, { method: "POST", signal: controller.signal, headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, input: [{ role: "system", content: [{ type: "input_text", text: "你是支付截图信息提取助手。只提取图片中明确存在的信息，不得猜测；无法确认的字段返回 null。" }] }, { role: "user", content: [{ type: "input_text", text: "提取平台、订单号、商品名称、支付金额、支付时间、支付状态、支付方式和收款方。" }, { type: "input_image", image_url: `data:${input.mimeType};base64,${input.base64Data}`, detail: "high" }] }], text: { format: { type: "json_schema", name: "payment_screenshot", strict: true, schema: outputSchema } } }) })
-    if (!response.ok) throw new Error(`OpenAI 支付截图识别失败（HTTP ${response.status}）`)
+    let response: Response
+    try {
+      response = await fetch(`${baseUrl}/responses`, { method: "POST", signal: controller.signal, headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, input: [{ role: "system", content: [{ type: "input_text", text: "你是支付截图信息提取助手。只提取图片中明确存在的信息，不得猜测；无法确认的字段返回 null。" }] }, { role: "user", content: [{ type: "input_text", text: "提取平台、订单号、商品名称、支付金额、支付时间、支付状态、支付方式和收款方。" }, { type: "input_image", image_url: `data:${input.mimeType};base64,${input.base64Data}`, detail: "high" }] }], text: { format: { type: "json_schema", name: "payment_screenshot", strict: true, schema: outputSchema } } }) })
+    } catch (reason) {
+      throw llmNetworkError(reason, { provider: "OpenAI", model, operation: "支付截图识别" }, controller.signal.aborted)
+    }
+    if (!response.ok) throw await llmHttpError(response, { provider: "OpenAI", model, operation: "支付截图识别" })
     const parsed = paymentSchema.parse(JSON.parse(outputText(await response.json())) as unknown); const data = Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1].trim()))) as OcrPaymentData
     return { data, raw: parsed as Record<string, unknown>, model }
   } finally { clearTimeout(timeout) }
