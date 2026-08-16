@@ -309,7 +309,7 @@ export interface ShellMenuItem {
   id: string
   label: string
   icon: string
-  target: "dashboard" | "document-list" | "settings" | "help" | "menu-management" | "user-management" | "role-management" | "department-management" | "declaration-name" | "ocr-recognition"
+  target: "dashboard" | "document-list" | "settings" | "help" | "menu-management" | "user-management" | "role-management" | "department-management" | "declaration-name" | "ocr-recognition" | "image-search" | "image-cutout"
   targetId?: string
   requiredPermissions?: string[]
 }
@@ -376,20 +376,63 @@ export interface DepartmentInput { code: string; name: string; parentId?: string
 export interface SystemManagementData { menus: SystemMenuRecord[]; roles: RoleRecord[]; users: UserRecord[]; departments: DepartmentRecord[] }
 
 export type OcrRecognitionStatus = "RECOGNIZING" | "SUCCESS" | "FAILED"
-export type OcrRecognitionType = "PAYMENT" | "INVOICE" | "NAVIGATION_ROUTE"
+export type OcrRecognitionType = "PAYMENT" | "INVOICE" | "NAVIGATION_ROUTE" | "TRAIN_TICKET"
 export interface OcrPaymentData { platform?: string; orderNo?: string; productName?: string; amount?: string; paymentTime?: string; paymentStatus?: string; paymentMethod?: string; receiver?: string }
 export type OcrRouteResultStatus = "success" | "uncertain" | "not_found"
 export interface OcrRouteData { routeResultStatus?: OcrRouteResultStatus; distanceKm?: number; tollYuan?: number; destination?: string; waypoints: string[]; confidence?: number; selectedRouteEvidence?: string }
 export interface OcrInvoiceItem { itemName?: string; specification?: string; unit?: string; quantity?: string; unitPrice?: string; amount?: string; taxRate?: string; taxAmount?: string }
 export type OcrInvoiceType = "VAT_NORMAL" | "VAT_SPECIAL"
 export interface OcrInvoiceData { invoiceType?: OcrInvoiceType; invoiceNumber?: string; invoiceDate?: string; buyerName?: string; buyerTaxId?: string; sellerName?: string; sellerTaxId?: string; subtotal?: string; totalTax?: string; totalAmount?: string; totalAmountInWords?: string; remarks?: string; drawer?: string; items: OcrInvoiceItem[] }
-export type OcrExtractionMethod = "QR" | "AI" | "HYBRID"
-export interface OcrRecognitionRecord extends OcrInvoiceData, OcrPaymentData, OcrRouteData { id: string; recognitionType: OcrRecognitionType; extractionMethod?: OcrExtractionMethod; originalFilename: string; mimeType: string; status: OcrRecognitionStatus; errorMessage?: string; createdAt: string; updatedAt: string }
+export interface OcrTrainTicketData { trainInvoiceNo?: string; trainIssueDate?: string; departureStation?: string; arrivalStation?: string; trainNo?: string; departureDate?: string; departureTime?: string; seatNo?: string; seatClass?: string; ticketPrice?: string; passengerId?: string; passengerName?: string; ticketNo?: string; trainBuyerName?: string; trainBuyerCreditCode?: string }
+export type OcrExtractionMethod = "QR" | "AI" | "HYBRID" | "PDF_TEXT"
+export interface OcrRecognitionRecord extends OcrInvoiceData, OcrPaymentData, OcrRouteData, OcrTrainTicketData { id: string; recognitionType: OcrRecognitionType; extractionMethod?: OcrExtractionMethod; originalFilename: string; mimeType: string; status: OcrRecognitionStatus; errorMessage?: string; createdAt: string; updatedAt: string }
 export interface OcrRecognizeRequest { recognitionType: OcrRecognitionType; filename: string; mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
 export interface OcrRecognizeResult { record: OcrRecognitionRecord; success: boolean }
 export interface OcrRecognitionQuery { recognitionType: OcrRecognitionType; keyword?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number }
 export interface OcrExportRequest { recognitionType: OcrRecognitionType; ids?: string[]; startDate?: string; endDate?: string }
 export interface OcrExportResult { base64: string; filename: string; count: number }
+
+export type ImageSearchMimeType = "image/jpeg" | "image/png" | "image/webp"
+export interface ImageSearchAsset {
+  id: string
+  title: string
+  originalFilename: string
+  mimeType: ImageSearchMimeType
+  tags: string[]
+  description?: string
+  indexed: boolean
+  embeddingModel?: string
+  indexedAt?: string
+  createdById: string
+  createdAt: string
+  updatedAt: string
+}
+export interface ImageSearchAssetQuery { keyword?: string; indexed?: boolean; page?: number; pageSize?: number }
+export interface ImageSearchUploadRequest { title: string; filename: string; mimeType: ImageSearchMimeType; base64Data: string; tags?: string[] }
+export interface ImageSearchRequest { filename: string; mimeType: ImageSearchMimeType; base64Data: string; topK?: number }
+export interface ImageSearchResultItem extends ImageSearchAsset { score: number; rank: number }
+export interface ImageSearchResult { historyId: string; results: ImageSearchResultItem[] }
+export interface ImageSearchHistoryRecord { id: string; queryOriginalFilename: string; topK: number; resultCount: number; results: ImageSearchResultItem[]; createdAt: string }
+export interface ExternalImageSearchRequest extends ImageSearchRequest { clientRequestId?: string }
+export interface ExternalImageSearchResultItem { id: string; title: string; tags: string[]; description?: string; score: number; rank: number; imagePath: string }
+export interface ExternalImageSearchResult { searchId: string; clientRequestId?: string; resultCount: number; results: ExternalImageSearchResultItem[] }
+
+export interface ExternalPaymentRecognizeRequest {
+  filename: string
+  mimeType: "image/jpeg" | "image/png" | "image/webp"
+  base64Data: string
+  clientRequestId?: string
+}
+export interface ExternalPaymentRecognizeResult extends OcrPaymentData {
+  recognitionId: string
+  originalFilename: string
+  clientRequestId?: string
+}
+export interface ExternalPaymentBatchRecognizeRequest { items: ExternalPaymentRecognizeRequest[] }
+export type ExternalPaymentBatchItemResult =
+  | { index: number; success: true; clientRequestId?: string; data: ExternalPaymentRecognizeResult }
+  | { index: number; success: false; filename: string; clientRequestId?: string; error: string }
+export interface ExternalPaymentBatchRecognizeResult { totalCount: number; successCount: number; failedCount: number; items: ExternalPaymentBatchItemResult[] }
 
 export interface ExternalInvoiceRecognizeRequest {
   filename: string
@@ -408,6 +451,49 @@ export type ExternalInvoiceBatchItemResult =
   | { index: number; success: true; clientRequestId?: string; data: ExternalInvoiceRecognizeResult }
   | { index: number; success: false; filename: string; clientRequestId?: string; error: string }
 export interface ExternalInvoiceBatchRecognizeResult { totalCount: number; successCount: number; failedCount: number; items: ExternalInvoiceBatchItemResult[] }
+
+export interface ExternalTrainTicketRecognizeRequest {
+  filename: string
+  mimeType: "application/pdf"
+  base64Data: string
+  clientRequestId?: string
+}
+export interface ExternalTrainTicketRecognizeResult extends OcrTrainTicketData {
+  recognitionId: string
+  originalFilename: string
+  extractionMethod: "PDF_TEXT"
+  clientRequestId?: string
+}
+export interface ExternalTrainTicketBatchRecognizeRequest { items: ExternalTrainTicketRecognizeRequest[] }
+export type ExternalTrainTicketBatchItemResult =
+  | { index: number; success: true; clientRequestId?: string; data: ExternalTrainTicketRecognizeResult }
+  | { index: number; success: false; filename: string; clientRequestId?: string; error: string }
+export interface ExternalTrainTicketBatchRecognizeResult { totalCount: number; successCount: number; failedCount: number; items: ExternalTrainTicketBatchItemResult[] }
+
+export interface ExternalNavigationRouteRecognizeRequest {
+  filename: string
+  mimeType: "image/jpeg" | "image/png" | "image/webp"
+  base64Data: string
+  clientRequestId?: string
+}
+export interface ExternalNavigationRouteRecognizeResult {
+  recognitionId: string
+  originalFilename: string
+  extractionMethod: "AI"
+  clientRequestId?: string
+  routeResultStatus: OcrRouteResultStatus
+  distanceKm?: number
+  tollYuan?: number
+  destination?: string
+  waypoints: string[]
+  confidence: number
+  selectedRouteEvidence: string
+}
+export interface ExternalNavigationRouteBatchRecognizeRequest { items: ExternalNavigationRouteRecognizeRequest[] }
+export type ExternalNavigationRouteBatchItemResult =
+  | { index: number; success: true; clientRequestId?: string; data: ExternalNavigationRouteRecognizeResult }
+  | { index: number; success: false; filename: string; clientRequestId?: string; error: string }
+export interface ExternalNavigationRouteBatchRecognizeResult { totalCount: number; successCount: number; failedCount: number; items: ExternalNavigationRouteBatchItemResult[] }
 
 export type DeclarationNameMappingStatus = "PENDING" | "GENERATING" | "APPROVED" | "REVIEW_REQUIRED" | "REJECTED" | "FAILED"
 export type DeclarationNameJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"

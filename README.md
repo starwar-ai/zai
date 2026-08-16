@@ -92,6 +92,8 @@ Compose 将 PostgreSQL 映射到本机 `5433` 端口，数据保存在具名卷 
 - 客户背景调查：通过 Schema 单据承载客户资料、四项判定、可信度和公开来源，支持 Excel 批量去重导入、表格勾选后由后台单队列顺序调查并逐条持久化、权限内队列领取、按 `LLM_PROVIDER_ORDER` 选择供应商与模型立即调查、模型返回实时展示、多次调查历史留档及作为后续调查上下文、失败重试、工作台进度和报告 Tab；复用 OpenAI、火山方舟、Kimi、MiniMax 的现有模型配置
 - 电子发票识别（移植自 `zinvoice`）：在 ZAI 外壳中提供 PDF/图片发票批量拖拽上传；原生 PDF 优先提取全部页面文本层并读取首页发票二维码，仅在没有有效文本层时回退到 PDF 视觉识别。AI 会区分普通发票与增值税专用发票；二维码核心字段覆盖结构化识别结果，AI 必须补全购买方、销售方、商品明细并提取备注（票面为空时允许为空），缺少票种、购销方或有效明细时整次识别失败；支持个人历史、原件详情、删除与明细级 Excel 导出，文件与结果保存在 PostgreSQL，并按当前用户隔离
 - 支付截图自动识别：保留原有电商及支付凭证批量识别能力，与电子发票识别使用独立菜单和分类历史，提取平台、订单、金额、时间、支付方式及收款方
+- 以图搜图（移植自 `zimage`）：共享图库支持 JPG、PNG、WebP 上传、单张或批量生成 64 维结构化视觉索引，并以余弦相似度返回 Top-K 结果；查询图片和结果快照保存在 PostgreSQL，搜索历史按当前用户隔离
+- 智能抠图（移植自 `zcutout`）：在 ZAI 工作区内批量移除 JPG、PNG、WebP 背景，支持透明、纯白或自定义底色、预设方形画布、主体留白、PNG/JPG 输出、单张下载和 ZIP 打包；推理与画布处理均在浏览器本地完成，首次使用会从 IMG.LY 下载并缓存 ONNX/WASM 模型资源
 
 ## 常用命令
 
@@ -137,12 +139,20 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | POST | `/api/customer-research/:id/process-stream` | 以 NDJSON 事件流实时调查指定客户 |
 | POST | `/api/customer-research/:id/retry` | 将失败调查重新加入队列 |
 | GET | `/api/customer-research/:id/report.pdf` | 导出权限范围内已完成的客户背景调查 PDF 报告 |
-| POST | `/api/ocr/recognitions` | 上传 PDF/图片电子发票并识别抬头、金额税额和商品明细 |
+| POST | `/api/ocr/recognitions` | 上传火车票 PDF、电子发票或截图并执行对应类型识别 |
 | GET | `/api/ocr/recognitions` | 分页查询当前用户的识别历史 |
 | GET | `/api/ocr/recognitions/:id` | 获取当前用户的识别详情 |
 | GET | `/api/ocr/recognitions/:id/image` | 获取识别记录的原始图片 |
 | DELETE | `/api/ocr/recognitions/:id` | 删除当前用户的识别记录 |
 | POST | `/api/ocr/recognitions/export` | 按记录或日期导出 Excel |
+| GET/POST | `/api/image-search/assets` | 分页查询或上传公共图库图片 |
+| GET/DELETE | `/api/image-search/assets/:id[/image]` | 读取原图或删除图库图片 |
+| POST | `/api/image-search/assets/:id/index` | 为单张图库图片生成视觉索引 |
+| POST | `/api/image-search/assets/index-pending` | 批量处理待索引图片，单次最多 50 张 |
+| POST | `/api/image-search/search` | 上传查询图片并返回 Top-K 相似图片 |
+| GET | `/api/image-search/history` | 分页查询当前用户的搜索历史 |
+| GET | `/api/image-search/history/:id/query-image` | 获取当前用户历史中的查询图片 |
+| DELETE | `/api/image-search/history/:id` | 删除当前用户的搜索历史 |
 | POST | `/api/documents` | 创建单据 |
 | GET/PUT/DELETE | `/api/documents/:id` | 详情、修改、删除 |
 | GET | `/api/documents/:id/trace` | 查询上下游追溯关系 |
@@ -158,8 +168,16 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | POST | `/api/declaration-names/writeback` | 将已审核映射显式回写到已登记来源项 |
 | POST | `/api/external/declaration-names/convert` | 使用 API Key 同步转换中英文商品名 |
 | POST | `/api/external/declaration-names/convert/batch` | 使用 API Key 批量转换中英文商品名，逐项返回结果 |
+| POST | `/api/external/payments/recognize` | 使用 API Key 同步识别单张支付截图 |
+| POST | `/api/external/payments/recognize/batch` | 使用 API Key 批量识别最多 10 张支付截图，逐项返回结果 |
+| POST | `/api/external/navigation-routes/recognize` | 使用 API Key 同步识别单张导航路线截图 |
+| POST | `/api/external/navigation-routes/recognize/batch` | 使用 API Key 批量识别导航路线截图，逐项返回结果 |
+| POST | `/api/external/image-search/search` | 使用 API Key 上传查询图片并返回 Top-K 相似图片 |
+| GET | `/api/external/image-search/assets/:id/image` | 使用 API Key 获取搜索结果原图 |
 | POST | `/api/external/invoices/recognize` | 使用 API Key 同步识别单张 PDF/图片电子发票 |
 | POST | `/api/external/invoices/recognize/batch` | 使用 API Key 批量识别最多 10 张电子发票，逐项返回结果 |
+| POST | `/api/external/train-tickets/recognize` | 使用 API Key 同步识别单张铁路电子客票 PDF |
+| POST | `/api/external/train-tickets/recognize/batch` | 使用 API Key 批量识别最多 10 张铁路电子客票，逐项返回结果 |
 | GET | `/api-docs` | Swagger 外部接口调试页 |
 | GET | `/api/openapi.json` | OpenAPI 3.0 接口定义 |
 
@@ -173,7 +191,11 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 }
 ```
 
-外部报关品名接口使用 `X-API-Key`（也支持 `Authorization: Bearer <key>`）鉴权。开发环境在 `apps/api/.env` 配置 `EXTERNAL_API_KEYS` 后，可打开 `http://localhost:3100/api-docs`，点击 **Authorize** 输入密钥并直接调试。多个调用方密钥以英文逗号分隔。接口优先复用已审核映射，未命中时同步调用模型；`qualified=false` 或 `reviewRequired=true` 的结果必须进入人工复核，不能直接用于正式申报。
+外部报关品名、支付截图、电子发票、导航截图和以图搜图接口使用 `X-API-Key`（也支持 `Authorization: Bearer <key>`）鉴权。开发环境在 `apps/api/.env` 配置 `EXTERNAL_API_KEYS` 后，可打开 `http://localhost:3100/api-docs`，点击 **Authorize** 输入密钥并直接调试。多个调用方密钥以英文逗号分隔。报关品名接口优先复用已审核映射，未命中时同步调用模型；`qualified=false` 或 `reviewRequired=true` 的结果必须进入人工复核，不能直接用于正式申报。导航截图接口仅接受 JPEG、PNG、WebP 的标准 Base64 内容，单张解码后最大 10MB；调用方应根据 `routeResultStatus` 与 `confidence` 判断是否需要人工复核。
+
+外部支付截图接口仅接受 JPEG、PNG、WebP 的标准 Base64 内容，单张解码后最大 10MB。结果包含平台、订单号、商品名称、金额、支付时间、支付状态、支付方式和收款方；批量接口单次最多 10 张、并发 2 张，单项失败不会中断其余项目，识别记录按 API Key 哈希后的调用方身份隔离保存。
+
+外部以图搜图接口仅接受 JPEG、PNG、WebP，查询图片解码后最大 8MB，`topK` 范围为 1–50。查询原图和结果快照按 API Key 哈希身份隔离保存；结果中的 `imagePath` 为相对地址，读取原图时需要继续携带有效 API Key。
 
 外部电子发票接口复用同一套 `EXTERNAL_API_KEYS` 鉴权与统一响应结构。文件通过不带 Data URL 前缀的 Base64 传入，单文件最大 10MB；识别记录按 API Key 哈希后的外部调用方身份隔离保存。批量接口单次最多 10 张、并发 2 张，单项失败不会中断其余项目。
 
@@ -244,7 +266,9 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `declaration_name_generation_jobs` / `declaration_name_generation_job_items`：批量模型任务及逐项结果
 - `declaration_name_source_items`：由 ERP 调用 `resolve` 时登记的来源明细和显式回写结果
 - `declaration_name_audit_logs`：模型生成、人工审核、驳回和回写审计
-- `ocr_recognitions`：用户、原始图片、识别状态、普通/增值税专用票种、结构化支付与发票字段、模型原始结果和失败信息
+- `ocr_recognitions`：用户、原始文件、识别类型与状态、火车票行程/乘客字段、结构化支付与发票字段、模型原始结果和失败信息
+- `image_search_assets`：公共图库原图、标签、视觉描述、64 维 JSONB 特征向量、模型和索引时间
+- `image_search_history`：按用户隔离的查询原图、Top-K 参数和搜索结果快照
 
 `documents(source_document_id, type_id)` 有唯一约束，从数据库层阻止并发重复下推；状态变更通过 `version` 条件更新，冲突时 API 返回 HTTP 409。
 
@@ -263,7 +287,11 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 
 报关名称能力使用 `declaration-name:view`、`declaration-name:generate`、`declaration-name:review` 和 `declaration-name:writeback` 四个权限码；种子数据提供最小权限的 `DECLARATION_REVIEWER` 角色。
 
-导航截图识别、支付截图自动识别和电子发票识别共用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。三类记录按识别类型分别查询，并且原件、删除和导出都会再次按当前用户 ID 与识别类型限定。导航截图识别会提取当前选中路线的目的地、途经地、距离、通行费、置信度及选中依据。
+火车票、导航截图、支付截图和电子发票识别共用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。四类记录按识别类型分别查询，并且原件、删除和导出都会再次按当前用户 ID 与识别类型限定。火车票识别支持带文本层的铁路电子客票 PDF，可提取行程、车次座位、乘客、票价及购买方字段；导航截图识别会提取当前选中路线的目的地、途经地、距离、通行费、置信度及选中依据。
+
+以图搜图使用 `image-search:view`、`image-search:search`、`image-search:manage` 和 `image-search:index` 四个权限码。种子数据提供只能搜索和查看个人历史的 `IMAGE_SEARCH_OPERATOR`；公共图库上传/删除与模型索引需要额外管理权限。
+
+智能抠图使用 `image-cutout:use` 权限码。种子数据提供最小权限的 `IMAGE_CUTOUT_OPERATOR` 角色；图片不会发送到 ZAI API，也不会写入 PostgreSQL，关闭工作区页面后浏览器会释放本批次的预览与成品 URL。
 
 前端隐藏入口只用于交互，真正的写权限由 API 校验。内置 `SYSTEM_ADMIN` 角色和 `framework-user` 演示用户受删除保护。生产接入认证时，应由可信中间件确定 `x-user-id`，不要接受浏览器任意冒充用户。
 
@@ -283,6 +311,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `OCR_PROVIDER` / `OCR_MODEL`：电子发票识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时完全回退到 `LLM_PROVIDER_ORDER` 和对应供应商的系统模型配置
 - `PAYMENT_OCR_MODEL`：支付截图识别的可选 OpenAI 模型；留空时使用 `OPENAI_MODEL`
 - `ROUTE_OCR_MODEL`：导航截图识别的可选 OpenAI Vision 模型；留空时使用 `OPENAI_MODEL`
+- `IMAGE_SEARCH_MODEL`：图片视觉索引与查询特征提取模型；留空时使用 `OPENAI_MODEL`，模型必须支持图片输入和严格 JSON Schema 输出
 - `KIMI_API_KEY` / `KIMI_MODEL` / `KIMI_BASE_URL`：Kimi OpenAI-compatible 配置
 - `MINIMAX_API_KEY` / `MINIMAX_MODEL` / `MINIMAX_BASE_URL`：MiniMax Anthropic-compatible 配置
 - `AUTO_APPROVE_CONFIDENCE`：自动通过置信度，默认 `0.9`

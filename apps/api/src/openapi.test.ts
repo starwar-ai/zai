@@ -8,9 +8,17 @@ function collectRefs(value: unknown, refs: string[]): void {
 }
 
 describe("OpenAPI document", () => {
-  it("contains documented external invoice endpoints and resolvable references", () => {
+  it("contains documented external recognition endpoints and resolvable references", () => {
+    expect(openApiDocument.paths).toHaveProperty("/api/external/payments/recognize")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/payments/recognize/batch")
     expect(openApiDocument.paths).toHaveProperty("/api/external/invoices/recognize")
     expect(openApiDocument.paths).toHaveProperty("/api/external/invoices/recognize/batch")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/train-tickets/recognize")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/train-tickets/recognize/batch")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/navigation-routes/recognize")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/navigation-routes/recognize/batch")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/image-search/search")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/image-search/assets/{id}/image")
     const refs: string[] = []; collectRefs(openApiDocument, refs)
     for (const ref of refs) {
       expect(ref.startsWith("#/components/")).toBe(true)

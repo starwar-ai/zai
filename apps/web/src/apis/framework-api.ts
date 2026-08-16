@@ -1,4 +1,4 @@
-import type { ActivityRecord, ApiEnvelope, CustomerResearchBatchRequest, CustomerResearchBatchResult, CustomerResearchImportRequest, CustomerResearchImportResult, CustomerResearchModelConfig, CustomerResearchProcessRequest, CustomerResearchProcessResult, CustomerResearchQueueSummary, DashboardData, DeclarationNameApproveRequest, DeclarationNameInput, DeclarationNameJob, DeclarationNameMapping, DeclarationNameRejectRequest, DeclarationNameResolveRequest, DeclarationNameResolveResult, DeclarationNameWritebackRequest, DeclarationNameWritebackResult, DepartmentInput, DepartmentRecord, DocumentAction, DocumentCreateRequest, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, DocumentUpdateRequest, ImpactAssessment, ListResponse, OcrExportRequest, OcrExportResult, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognitionType, OcrRecognizeRequest, OcrRecognizeResult, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
+import type { ActivityRecord, ApiEnvelope, CustomerResearchBatchRequest, CustomerResearchBatchResult, CustomerResearchImportRequest, CustomerResearchImportResult, CustomerResearchModelConfig, CustomerResearchProcessRequest, CustomerResearchProcessResult, CustomerResearchQueueSummary, DashboardData, DeclarationNameApproveRequest, DeclarationNameInput, DeclarationNameJob, DeclarationNameMapping, DeclarationNameRejectRequest, DeclarationNameResolveRequest, DeclarationNameResolveResult, DeclarationNameWritebackRequest, DeclarationNameWritebackResult, DepartmentInput, DepartmentRecord, DocumentAction, DocumentCreateRequest, DocumentListQuery, DocumentQueryRequest, DocumentQueryResult, DocumentRecord, DocumentSchema, DocumentUpdateRequest, ImageSearchAsset, ImageSearchAssetQuery, ImageSearchHistoryRecord, ImageSearchRequest, ImageSearchResult, ImageSearchUploadRequest, ImpactAssessment, ListResponse, OcrExportRequest, OcrExportResult, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognitionType, OcrRecognizeRequest, OcrRecognizeResult, RoleRecord, ShellBootstrapData, SystemManagementData, SystemMenuRecord, TraceGraph, UserRecord, UserShellSettings } from "@zform/shared"
 
 // Framework API 的唯一前端入口，组件中不要散落原始 fetch。
 
@@ -74,6 +74,16 @@ export const api = {
   ocrImage: (type: OcrRecognitionType, id: string) => requestBlob(`/api/ocr/recognitions/${id}/image?recognitionType=${type}`),
   removeOcrRecognition: (type: OcrRecognitionType, id: string) => request<null>(`/api/ocr/recognitions/${id}?recognitionType=${type}`, { method: "DELETE" }),
   exportOcrRecognitions: (input: OcrExportRequest) => request<OcrExportResult>("/api/ocr/recognitions/export", { method: "POST", body: JSON.stringify(input) }),
+  imageSearchAssets: (query: ImageSearchAssetQuery = {}) => { const params = new URLSearchParams(); Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== "") params.set(key, String(value)) }); return request<ListResponse<ImageSearchAsset>>(`/api/image-search/assets?${params}`) },
+  uploadImageSearchAsset: (input: ImageSearchUploadRequest) => request<ImageSearchAsset>("/api/image-search/assets", { method: "POST", body: JSON.stringify(input) }),
+  imageSearchAssetImage: (id: string) => requestBlob(`/api/image-search/assets/${id}/image`),
+  removeImageSearchAsset: (id: string) => request<null>(`/api/image-search/assets/${id}`, { method: "DELETE" }),
+  indexImageSearchAsset: (id: string) => request<ImageSearchAsset>(`/api/image-search/assets/${id}/index`, { method: "POST" }),
+  indexPendingImageSearchAssets: (limit = 20) => request<{ processed: number; failed: number; total: number }>("/api/image-search/assets/index-pending", { method: "POST", body: JSON.stringify({ limit }) }),
+  searchByImage: (input: ImageSearchRequest) => request<ImageSearchResult>("/api/image-search/search", { method: "POST", body: JSON.stringify(input) }),
+  imageSearchHistory: (page = 1, pageSize = 20) => request<ListResponse<ImageSearchHistoryRecord>>(`/api/image-search/history?page=${page}&pageSize=${pageSize}`),
+  imageSearchQueryImage: (id: string) => requestBlob(`/api/image-search/history/${id}/query-image`),
+  removeImageSearchHistory: (id: string) => request<null>(`/api/image-search/history/${id}`, { method: "DELETE" }),
   schemas: () => request<DocumentSchema[]>("/api/schemas"),
   dashboard: () => request<DashboardData>("/api/dashboard"),
   documents: (query: DocumentListQuery = {}) => {

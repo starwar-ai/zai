@@ -6,7 +6,7 @@ import { ok, routeParam } from "../utils/http.js"
 const menuInputSchema = z.object({
   id: z.string().min(2).max(80), groupId: z.string().min(1).max(64), groupLabel: z.string().min(1).max(80),
   label: z.string().min(1).max(80), icon: z.string().min(1).max(60),
-  target: z.enum(["dashboard", "document-list", "settings", "help", "menu-management", "user-management", "role-management", "department-management", "declaration-name", "ocr-recognition"]),
+  target: z.enum(["dashboard", "document-list", "settings", "help", "menu-management", "user-management", "role-management", "department-management", "declaration-name", "ocr-recognition", "image-search", "image-cutout"]),
   targetId: z.string().max(80).optional(), permissionCode: z.string().max(100).optional(), order: z.number().int(), enabled: z.boolean(),
 })
 const roleInputSchema = z.object({

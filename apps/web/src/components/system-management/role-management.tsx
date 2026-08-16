@@ -18,7 +18,8 @@ function permissionGroups(menus: SystemMenuRecord[]): PermissionGroup[] {
   const documents = menus.filter((menu) => menu.target === "document-list" && menu.targetId).flatMap((menu) => ["create", "update", "delete", "submit", "approve"].map((action) => ({ code: `document:${menu.targetId}:${action}`, label: `${menu.label}·${({ create: "新建", update: "编辑", delete: "删除", submit: "提交", approve: "审批" } as Record<string, string>)[action]}` })))
   const unique = (items: Array<{ code: string; label: string }>) => [...new Map(items.map((item) => [item.code, item])).values()]
   const ocr = [{ code: "ocr:view", label: "查看识别记录" }, { code: "ocr:recognize", label: "上传并识别" }, { code: "ocr:delete", label: "删除识别记录" }, { code: "ocr:export", label: "导出识别结果" }]
-  return [{ id: "system", label: "系统管理", items: unique(systemItems) }, { id: "navigation", label: "页面访问", items: unique(navigation) }, { id: "documents", label: "单据操作", items: unique(documents) }, { id: "ocr", label: "OCR 识别", items: ocr }]
+  const imageSearch = [{ code: "image-search:view", label: "查看图库与个人历史" }, { code: "image-search:search", label: "执行以图搜图" }, { code: "image-search:manage", label: "维护公共图库" }, { code: "image-search:index", label: "生成图片索引" }]
+  return [{ id: "system", label: "系统管理", items: unique(systemItems) }, { id: "navigation", label: "页面访问", items: unique(navigation) }, { id: "documents", label: "单据操作", items: unique(documents) }, { id: "ocr", label: "OCR 识别", items: ocr }, { id: "image-search", label: "以图搜图", items: imageSearch }]
 }
 
 export function RoleManagement({ roles, menus, onChanged, onError }: Props) {

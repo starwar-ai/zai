@@ -185,6 +185,21 @@ model OcrRecognition {
   remarks          String?  @db.VarChar(1000)
   drawer           String?  @db.VarChar(100)
   invoiceItems     Json     @default("[]") @map("invoice_items") @db.JsonB
+  trainInvoiceNo   String?  @map("train_invoice_no") @db.VarChar(100)
+  trainIssueDate   String?  @map("train_issue_date") @db.VarChar(100)
+  departureStation String?  @map("departure_station") @db.VarChar(100)
+  arrivalStation   String?  @map("arrival_station") @db.VarChar(100)
+  trainNo          String?  @map("train_no") @db.VarChar(30)
+  departureDate    String?  @map("departure_date") @db.VarChar(100)
+  departureTime    String?  @map("departure_time") @db.VarChar(30)
+  seatNo           String?  @map("seat_no") @db.VarChar(100)
+  seatClass        String?  @map("seat_class") @db.VarChar(50)
+  ticketPrice      String?  @map("ticket_price") @db.VarChar(80)
+  passengerId      String?  @map("passenger_id") @db.VarChar(50)
+  passengerName    String?  @map("passenger_name") @db.VarChar(100)
+  ticketNo         String?  @map("ticket_no") @db.VarChar(100)
+  trainBuyerName   String?  @map("train_buyer_name") @db.VarChar(255)
+  trainBuyerCreditCode String? @map("train_buyer_credit_code") @db.VarChar(30)
   rawJson          Json?    @map("raw_json") @db.JsonB
   model            String?  @db.VarChar(100)
   errorMessage     String?  @map("error_message") @db.VarChar(1000)
@@ -196,6 +211,41 @@ model OcrRecognition {
   @@index([userId, recognitionType, createdAt])
   @@index([invoiceNumber])
   @@map("ocr_recognitions")
+}
+
+model ImageSearchAsset {
+  id               String   @id @default(uuid()) @db.Uuid
+  title            String   @db.VarChar(255)
+  originalFilename String   @map("original_filename") @db.VarChar(255)
+  mimeType         String   @map("mime_type") @db.VarChar(50)
+  imageData        Bytes    @map("image_data")
+  tags             String[] @default([])
+  description      String?  @db.VarChar(1000)
+  embedding        Json?    @db.JsonB
+  embeddingModel   String?  @map("embedding_model") @db.VarChar(100)
+  indexedAt        DateTime? @map("indexed_at") @db.Timestamptz(3)
+  createdById      String   @map("created_by_id") @db.VarChar(64)
+  departmentId     String?  @map("department_id") @db.VarChar(64)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([indexedAt, createdAt])
+  @@index([createdById, createdAt])
+  @@map("image_search_assets")
+}
+
+model ImageSearchHistory {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String   @map("user_id") @db.VarChar(64)
+  queryOriginalFilename String   @map("query_original_filename") @db.VarChar(255)
+  queryMimeType         String   @map("query_mime_type") @db.VarChar(50)
+  queryImageData        Bytes    @map("query_image_data")
+  topK                  Int      @map("top_k")
+  results               Json     @db.JsonB
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@map("image_search_history")
 }
 
 model Role {

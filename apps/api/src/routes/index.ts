@@ -6,6 +6,7 @@ import { shellRoutes } from "./shell-routes.js"
 import { systemManagementRoutes } from "./system-management-routes.js"
 import { customerResearchRoutes } from "./customer-research-routes.js"
 import { ocrRoutes } from "./ocr-routes.js"
+import { imageSearchRoutes } from "./image-search-routes.js"
 
 export const routes = Router()
 const apiRoutes = Router()
@@ -15,6 +16,7 @@ apiRoutes.use(systemManagementRoutes)
 apiRoutes.use(declarationNameRoutes)
 apiRoutes.use(customerResearchRoutes)
 apiRoutes.use(ocrRoutes)
+apiRoutes.use(imageSearchRoutes)
 apiRoutes.use(documentRoutes)
 
 routes.use(healthRoutes)

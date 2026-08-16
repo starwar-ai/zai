@@ -6,7 +6,7 @@ import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Checkbox, Conf
 
 interface Props { menus: SystemMenuRecord[]; onChanged: () => Promise<void>; onError: (message: string | null) => void }
 interface MenuDraft extends SystemMenuRecord { editing?: boolean }
-const targetLabels: Record<SystemMenuRecord["target"], string> = { dashboard: "工作台", "document-list": "单据列表", settings: "用户设置", help: "帮助页", "menu-management": "菜单管理", "department-management": "部门管理", "user-management": "用户管理", "role-management": "角色管理", "declaration-name": "报关名称", "ocr-recognition": "OCR 识别（参数 payment/invoice）" }
+const targetLabels: Record<SystemMenuRecord["target"], string> = { dashboard: "工作台", "document-list": "单据列表", settings: "用户设置", help: "帮助页", "menu-management": "菜单管理", "department-management": "部门管理", "user-management": "用户管理", "role-management": "角色管理", "declaration-name": "报关名称", "ocr-recognition": "OCR 识别（参数 payment/invoice）", "image-search": "以图搜图", "image-cutout": "智能抠图" }
 const emptyMenu = (): MenuDraft => ({ id: "", groupId: "system", groupLabel: "系统管理", label: "", icon: "FileText", target: "help", order: 100, enabled: true })
 
 export function MenuManagement({ menus, onChanged, onError }: Props) {
