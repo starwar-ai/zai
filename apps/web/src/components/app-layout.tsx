@@ -12,6 +12,7 @@ import { OcrRecognition } from "@/components/ocr-recognition"
 import { PaymentRecognition } from "@/components/payment-recognition"
 import { NavigationRouteRecognition } from "@/components/navigation-route-recognition"
 import { ImageSearch } from "@/components/image-search"
+import { createClientId } from "@/lib/client-id"
 import { ImageCutout } from "@/components/image-cutout"
 import { TrainTicketRecognition } from "@/components/train-ticket-recognition"
 import { SystemManagement } from "@/components/system-management"
@@ -57,7 +58,7 @@ export function AppLayout() {
   const openView = useCallback((view: WorkspaceView, title: string, id: string, closable = true) => activateOrAdd({ id, title, view, closable, revision: 0 }), [activateOrAdd])
   const openList = useCallback((typeId?: string) => { const schema = schemas.find((item) => item.typeId === typeId); if (schema) openView({ kind: "list", typeId: schema.typeId }, schema.typeName, `list:${schema.typeId}`) }, [openView, schemas])
   const openDocument = useCallback((document: DocumentRecord, highlightedRowId?: string) => openView({ kind: "editor", id: document.id, returnTypeId: document.typeId, highlightedRowId }, document.code, `editor:${document.id}`), [openView])
-  const openDraft = useCallback((typeId: string, sourceId?: string) => { const schema = schemas.find((item) => item.typeId === typeId); if (!schema) return; const id = `draft:${crypto.randomUUID()}`; openView({ kind: "draft", typeId, sourceId }, sourceId ? `复制${schema.typeName}` : `新建${schema.typeName}`, id) }, [openView, schemas])
+  const openDraft = useCallback((typeId: string, sourceId?: string) => { const schema = schemas.find((item) => item.typeId === typeId); if (!schema) return; const id = `draft:${createClientId()}`; openView({ kind: "draft", typeId, sourceId }, sourceId ? `复制${schema.typeName}` : `新建${schema.typeName}`, id) }, [openView, schemas])
   const requestDiscard = (targets: WorkspaceTab[], action: () => void) => {
     const dirty = targets.filter((tab) => tab.dirty)
     if (!dirty.length) { action(); return }

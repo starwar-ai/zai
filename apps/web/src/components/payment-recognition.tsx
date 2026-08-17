@@ -4,6 +4,7 @@ import type { ListResponse, OcrRecognitionRecord, OcrRecognitionStatus } from "@
 import { api } from "@/apis/framework-api"
 import { formatDate } from "@/components/status-pill"
 import { Alert, Badge, Button, Card, CardContent, ConfirmDialog, Dialog, EmptyState, IconButton, Input, PageHeader, Pagination, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs } from "@/components/ui"
+import { createClientId } from "@/lib/client-id"
 
 const EMPTY_HISTORY: ListResponse<OcrRecognitionRecord> = { items: [], total: 0, page: 1, pageSize: 20, pageCount: 1 }
 const STATUS_LABELS: Record<OcrRecognitionStatus, string> = { RECOGNIZING: "识别中", SUCCESS: "识别成功", FAILED: "识别失败" }
@@ -38,7 +39,7 @@ function OcrUpload({ onChanged, onOpenHistory }: { onChanged: () => void; onOpen
   useEffect(() => () => { itemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl)) }, [])
   const patchItem = useCallback((localId: string, patch: Partial<UploadItem>) => setItems((current) => current.map((item) => item.localId === localId ? { ...item, ...patch } : item)), [])
   const processFile = useCallback(async (file: File) => {
-    const localId = crypto.randomUUID(); const previewUrl = URL.createObjectURL(file)
+    const localId = createClientId(); const previewUrl = URL.createObjectURL(file)
     setItems((current) => [{ localId, file, previewUrl, status: "RECOGNIZING" }, ...current])
     try { const result = await api.recognizeOcr({ recognitionType: "PAYMENT", filename: file.name, mimeType: file.type as typeof ACCEPTED_TYPES[number], base64Data: await fileBase64(file) }); patchItem(localId, { status: result.record.status, record: result.record, ...(result.record.errorMessage ? { error: result.record.errorMessage } : {}) }); setMessage({ variant: result.success ? "success" : "danger", text: result.success ? `${file.name} 识别成功。` : `${file.name}：${result.record.errorMessage || "识别失败"}` }); onChanged() }
     catch (reason) { patchItem(localId, { status: "FAILED", error: reason instanceof Error ? reason.message : "处理失败" }); setMessage({ variant: "danger", text: reason instanceof Error ? reason.message : "处理失败" }) }

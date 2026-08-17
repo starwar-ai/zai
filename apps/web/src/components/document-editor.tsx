@@ -9,6 +9,7 @@ import { Button, ConfirmDialog, IconButton, Tabs, type ButtonVariant } from "@/c
 import { pluginRegistry, renderExtraTab } from "@/core/plugin-registry"
 import { useSchemaEffects } from "@/hooks/use-schema-effects"
 import { queryClient } from "@/lib/query-client"
+import { createClientId } from "@/lib/client-id"
 
 interface EditorDraft { typeId: string; sourceId?: string }
 interface EditorProps { documentId?: string; draft?: EditorDraft; schemas: DocumentSchema[]; onBack: () => void; onOpen: (document: DocumentRecord) => void; onOpenSource: (document: DocumentRecord, highlightedRowId?: string) => void; onCreated: (document: DocumentRecord) => void; onChanged: () => Promise<void>; onDirtyChange?: (dirty: boolean) => void; highlightedRowId?: string }
@@ -34,7 +35,7 @@ function emptyDetailTables(schema: DocumentSchema): DetailTableData[] {
 }
 
 function copyDetailTables(tables: DetailTableData[]): DetailTableData[] {
-  return tables.map((table) => ({ tableId: table.tableId, rows: table.rows.map((row) => ({ id: crypto.randomUUID(), data: { ...row.data } })) }))
+  return tables.map((table) => ({ tableId: table.tableId, rows: table.rows.map((row) => ({ id: createClientId(), data: { ...row.data } })) }))
 }
 
 function DetailRowSelector({ table, onSelect }: { table: DetailTableSchema; onSelect: (rows: Array<Record<string, unknown>>) => void }) {
@@ -86,7 +87,7 @@ export function DocumentEditor({ documentId, draft, schemas, onOpen, onOpenSourc
   const updateField = (fieldId: string, value: unknown) => setMasterData((current) => ({ ...current, [fieldId]: value }))
   const rowsFor = (tableId: string) => detailTables.find((table) => table.tableId === tableId)?.rows || []
   const setRows = (tableId: string, rows: DetailRowData[]) => setDetailTables((tables) => [...tables.filter((table) => table.tableId !== tableId), { tableId, rows }])
-  const setPluginRows = (tableId: string, rows: Array<Record<string, unknown>>) => setRows(tableId, [...rowsFor(tableId), ...rows.map((data) => ({ id: crypto.randomUUID(), data }))])
+  const setPluginRows = (tableId: string, rows: Array<Record<string, unknown>>) => setRows(tableId, [...rowsFor(tableId), ...rows.map((data) => ({ id: createClientId(), data }))])
   const updateRow = (tableId: string, rowId: string, fieldId: string, value: unknown) => setRows(tableId, rowsFor(tableId).map((row) => row.id === rowId ? { ...row, data: { ...row.data, [fieldId]: value } } : row))
 
   useSchemaEffects({ effects: schema?.effects || [], mode, data: masterData, detailTables, setField: updateField, setDetailRows: setPluginRows })

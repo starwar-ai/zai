@@ -41,6 +41,67 @@ function Assert-Command {
     }
 }
 
+function Assert-PackageLockWorkspaceDependencies {
+    param([string]$RootPath)
+
+    $lockPath = Join-Path $RootPath "package-lock.json"
+    if (-not (Test-Path -LiteralPath $lockPath)) {
+        throw "缺少 package-lock.json，无法使用 npm ci 进行可复现部署。"
+    }
+
+    # Windows PowerShell 5.1 无法解析 package-lock 中表示根 workspace 的空字符串键，
+    # 仅在内存中替换该键以兼容 Windows PowerShell 与 PowerShell 7。
+    $lockJson = (Get-Content -LiteralPath $lockPath -Raw).Replace('    "": {', '    "__workspace_root__": {')
+    $lock = $lockJson | ConvertFrom-Json
+    $manifestPaths = @((Join-Path $RootPath "package.json"))
+    foreach ($workspaceRootName in @("apps", "packages")) {
+        $workspaceRoot = Join-Path $RootPath $workspaceRootName
+        foreach ($workspaceDirectory in Get-ChildItem -LiteralPath $workspaceRoot -Directory) {
+            $workspaceManifestPath = Join-Path $workspaceDirectory.FullName "package.json"
+            if (Test-Path -LiteralPath $workspaceManifestPath) {
+                $manifestPaths += $workspaceManifestPath
+            }
+        }
+    }
+
+    foreach ($manifestPath in $manifestPaths) {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $manifestDirectory = Split-Path -Parent $manifestPath
+        $packageKey = if ($manifestDirectory -eq $RootPath) {
+            ""
+        }
+        else {
+            $manifestDirectory.Substring($RootPath.Length).TrimStart("\", "/").Replace("\", "/")
+        }
+        $lockPackageKey = if ($packageKey -eq "") { "__workspace_root__" } else { $packageKey }
+        $lockedPackageProperty = $lock.packages.PSObject.Properties[$lockPackageKey]
+        if ($null -eq $lockedPackageProperty) {
+            throw "package-lock.json 缺少 workspace '$packageKey'。请先在开发机同步锁文件后再部署。"
+        }
+
+        foreach ($sectionName in @("dependencies", "devDependencies")) {
+            $manifestSection = $manifest.PSObject.Properties[$sectionName]
+            if ($null -eq $manifestSection) {
+                continue
+            }
+
+            $lockedSection = $lockedPackageProperty.Value.PSObject.Properties[$sectionName]
+            foreach ($dependency in $manifestSection.Value.PSObject.Properties) {
+                $lockedDependency = if ($null -eq $lockedSection) {
+                    $null
+                }
+                else {
+                    $lockedSection.Value.PSObject.Properties[$dependency.Name]
+                }
+
+                if ($null -eq $lockedDependency -or $lockedDependency.Value -ne $dependency.Value) {
+                    throw "package-lock.json 与 '$packageKey/package.json' 不同步：$sectionName.$($dependency.Name)。请先在开发机执行 npm install 并提交更新后的锁文件。"
+                }
+            }
+        }
+    }
+}
+
 if ($Server -notmatch '^[a-zA-Z0-9.:-]+$') {
     throw "Server 必须是有效的主机名或 IP 地址。"
 }
@@ -58,6 +119,7 @@ if ($ServiceName -notmatch '^[a-zA-Z0-9_.@-]+$') {
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Assert-PackageLockWorkspaceDependencies -RootPath $repositoryRoot
 if ($EnvFile) {
     $envFilePath = if ([System.IO.Path]::IsPathRooted($EnvFile)) {
         $EnvFile
@@ -177,6 +239,9 @@ release_path="$releases_path/$release_id"
 current_path="$deploy_path/current"
 environment_path="$shared_path/apps-api.env"
 previous_release=""
+web_root="/var/www/zai"
+web_stage="/var/www/.zai-$release_id.next"
+web_backup="/var/www/.zai-$release_id.previous"
 
 mkdir -p "$releases_path" "$shared_path"
 if [ -L "$current_path" ]; then
@@ -186,6 +251,7 @@ fi
 mkdir "$release_path"
 cleanup_failed_release() {
   rm -f "$archive_path" "$remote_env"
+  rm -rf -- "$web_stage"
   if [ -d "$release_path" ] && [ "$(readlink -f "$current_path" 2>/dev/null || true)" != "$release_path" ]; then
     rm -rf -- "$release_path"
   fi
@@ -211,6 +277,13 @@ ln -s "$environment_path" "$release_path/apps/api/.env"
 cd "$release_path"
 npm ci
 npm run build
+if [ ! -f "$release_path/apps/web/dist/index.html" ]; then
+  echo "前端构建未生成 apps/web/dist/index.html。" >&2
+  exit 1
+fi
+mkdir "$web_stage"
+cp -a -- "$release_path/apps/web/dist/." "$web_stage/"
+chmod -R a+rX "$web_stage"
 npm run db:deploy
 if [ "$run_seed" = "1" ]; then
   npm run db:seed
@@ -259,6 +332,23 @@ if ! systemctl is-active --quiet "$service_name.service"; then
   fi
   exit 1
 fi
+
+# Nginx 使用 /var/www/zai 提供静态页面；构建成功后原子切换整个目录，
+# 避免只更新后端 release 而继续展示安装 Nginx 时复制的旧页面。
+if [ -e "$web_root" ] || [ -L "$web_root" ]; then
+  mv -- "$web_root" "$web_backup"
+fi
+if ! mv -- "$web_stage" "$web_root"; then
+  if [ -e "$web_backup" ] || [ -L "$web_backup" ]; then
+    mv -- "$web_backup" "$web_root" || true
+  fi
+  if [ -n "$previous_release" ] && [ -d "$previous_release" ]; then
+    ln -sfn "$previous_release" "$current_path"
+    systemctl restart "$service_name.service" || true
+  fi
+  exit 1
+fi
+rm -rf -- "$web_backup" || true
 
 trap - ERR
 printf '%s\n' "部署成功：$release_path" "服务状态：$(systemctl is-active "$service_name.service")"

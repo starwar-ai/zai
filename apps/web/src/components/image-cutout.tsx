@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent 
 import { zipSync } from "fflate"
 import { Check, Download, FileImage, ImageDown, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react"
 import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle, FormField, IconButton, Input, PageHeader, Select } from "@/components/ui"
+import { createClientId } from "@/lib/client-id"
 
 type BackgroundMode = "transparent" | "white" | "color"
 type ExportType = "png" | "jpg"
@@ -116,7 +117,7 @@ export function ImageCutout() {
     else if (available.length !== valid.length) setMessage({ variant: "warning", text: `单个批次最多处理 ${MAX_FILES} 张图片。` })
     else setMessage(undefined)
     if (!available.length) return
-    setItems((current) => [...current, ...available.map((file) => ({ id: crypto.randomUUID(), file, sourceUrl: URL.createObjectURL(file), status: "pending" as const, progress: 0 }))])
+    setItems((current) => [...current, ...available.map((file) => ({ id: createClientId(), file, sourceUrl: URL.createObjectURL(file), status: "pending" as const, progress: 0 }))])
   }
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
