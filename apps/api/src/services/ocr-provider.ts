@@ -3,14 +3,14 @@ import { z } from "zod"
 import { configuredLlmProviders, llmProviderConfig, type LlmProviderConfig } from "./llm-provider-config.js"
 import { llmHttpError, llmNetworkError } from "./llm-error-detail.js"
 
-const nullableText = z.string().nullable()
-const nullableInvoiceType = z.enum(["VAT_NORMAL", "VAT_SPECIAL"]).nullable()
-const invoiceItemSchema = z.object({ itemName: nullableText, specification: nullableText, unit: nullableText, quantity: nullableText, unitPrice: nullableText, amount: nullableText, taxRate: nullableText, taxAmount: nullableText }).strict()
+const nullableText = z.string().nullable().optional().default(null)
+const nullableInvoiceType = z.enum(["VAT_NORMAL", "VAT_SPECIAL"]).nullable().optional().default(null)
+const invoiceItemSchema = z.object({ itemName: nullableText, specification: nullableText, unit: nullableText, quantity: nullableText, unitPrice: nullableText, amount: nullableText, taxRate: nullableText, taxAmount: nullableText }).strip()
 const invoiceDataSchema = z.object({
   invoiceType: nullableInvoiceType, invoiceNumber: nullableText, invoiceDate: nullableText, buyerName: nullableText, buyerTaxId: nullableText, sellerName: nullableText, sellerTaxId: nullableText,
   subtotal: nullableText, totalTax: nullableText, totalAmount: nullableText, totalAmountInWords: nullableText, remarks: nullableText, drawer: nullableText,
-  items: z.array(invoiceItemSchema).max(200),
-}).strict()
+  items: z.array(invoiceItemSchema).max(200).optional().default([]),
+}).strip()
 
 const nullableString = { anyOf: [{ type: "string" }, { type: "null" }] } as const
 const nullableInvoiceTypeSchema = { anyOf: [{ type: "string", enum: ["VAT_NORMAL", "VAT_SPECIAL"] }, { type: "null" }] } as const
@@ -43,6 +43,38 @@ function extractJson(output: string): unknown {
   const start = fenced.indexOf("{"); const end = fenced.lastIndexOf("}")
   if (start < 0 || end <= start) throw new Error("模型未返回有效的发票 JSON")
   return JSON.parse(fenced.slice(start, end + 1)) as unknown
+}
+const invoiceAliases = {
+  invoiceType: ["invoiceType", "invoice_type", "发票类型"], invoiceNumber: ["invoiceNumber", "invoice_number", "发票号码"], invoiceDate: ["invoiceDate", "invoice_date", "开票日期"],
+  buyerName: ["buyerName", "buyer_name", "购买方名称", "购买方"], buyerTaxId: ["buyerTaxId", "buyer_tax_id", "购买方税号", "购买方纳税人识别号"],
+  sellerName: ["sellerName", "seller_name", "销售方名称", "销售方"], sellerTaxId: ["sellerTaxId", "seller_tax_id", "销售方税号", "销售方纳税人识别号"],
+  subtotal: ["subtotal", "amountTotal", "amount_total", "金额合计"], totalTax: ["totalTax", "total_tax", "税额合计"], totalAmount: ["totalAmount", "total_amount", "价税合计"],
+  totalAmountInWords: ["totalAmountInWords", "total_amount_in_words", "价税合计大写"], remarks: ["remarks", "remark", "备注"], drawer: ["drawer", "开票人"],
+} as const
+const itemAliases = {
+  itemName: ["itemName", "item_name", "name", "项目名称", "商品名称"], specification: ["specification", "规格型号"], unit: ["unit", "单位"], quantity: ["quantity", "数量"],
+  unitPrice: ["unitPrice", "unit_price", "单价"], amount: ["amount", "金额"], taxRate: ["taxRate", "tax_rate", "税率"], taxAmount: ["taxAmount", "tax_amount", "税额"],
+} as const
+function aliasValue(source: Record<string, unknown>, aliases: readonly string[]): unknown { for (const key of aliases) { if (source[key] !== undefined) return source[key] }; return undefined }
+function textValue(value: unknown): string | null { return typeof value === "string" ? value : typeof value === "number" && Number.isFinite(value) ? String(value) : null }
+function invoiceType(value: unknown, fallbackText: string): "VAT_NORMAL" | "VAT_SPECIAL" | null {
+  const text = typeof value === "string" ? value.trim() : ""
+  if (text === "VAT_SPECIAL" || /专用发票|special/i.test(text)) return "VAT_SPECIAL"
+  if (text === "VAT_NORMAL" || /普通发票|normal/i.test(text)) return "VAT_NORMAL"
+  if (/专用发票/.test(fallbackText)) return "VAT_SPECIAL"
+  if (/普通发票/.test(fallbackText)) return "VAT_NORMAL"
+  return null
+}
+function normalizeInvoicePayload(value: unknown, fallbackText: string): Record<string, unknown> {
+  const root = record(value) || {}
+  const wrapped = ["data", "result", "invoice", "invoiceData", "electronic_invoice"].map((key) => record(root[key])).find(Boolean)
+  const source = wrapped || root
+  const rawInvoiceType = aliasValue(source, invoiceAliases.invoiceType)
+  const normalized: Record<string, unknown> = Object.fromEntries(Object.entries(invoiceAliases).map(([key, aliases]) => [key, textValue(aliasValue(source, aliases))]))
+  normalized.invoiceType = invoiceType(rawInvoiceType, fallbackText)
+  const rawItems = aliasValue(source, ["items", "invoiceItems", "invoice_items", "商品明细", "明细"])
+  normalized.items = Array.isArray(rawItems) ? rawItems.map((value) => { const item = record(value) || {}; return Object.fromEntries(Object.entries(itemAliases).map(([key, aliases]) => [key, textValue(aliasValue(item, aliases))])) }) : []
+  return normalized
 }
 function compactItem(item: z.infer<typeof invoiceItemSchema>): OcrInvoiceItem { return Object.fromEntries(Object.entries(item).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1].trim()))) as OcrInvoiceItem }
 
@@ -115,7 +147,7 @@ export async function recognizeInvoice(input: OcrRecognizeRequest, context: Invo
   if (!response.ok) throw await llmHttpError(response, { provider: provider.provider, model, operation: "发票识别" })
   const payload = await response.json() as unknown
   const output = provider.mode === "responses" ? extractOutputText(payload) : extractChatText(payload)
-  const parsed = invoiceDataSchema.parse(extractJson(output))
+  const parsed = invoiceDataSchema.parse(normalizeInvoicePayload(extractJson(output), `${context.pdfText || ""}\n${output}`))
   const raw = parsed as unknown as Record<string, unknown>
   const headers = Object.fromEntries(Object.entries(parsed).filter(([key, value]) => key !== "items" && typeof value === "string" && Boolean(value.trim())))
   const data = { ...headers, items: parsed.items.map(compactItem) } as OcrInvoiceData

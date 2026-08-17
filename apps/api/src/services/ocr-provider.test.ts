@@ -20,6 +20,24 @@ describe("electronic invoice OCR provider", () => {
     expect(body.input[1]?.content[1]?.image_url).toBe("data:image/png;base64,aW1hZ2U=")
   })
 
+  it("accepts omitted nullable fields and common wrapped aliases", async () => {
+    process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
+    const output = { result: { invoice_type: "增值税专用发票", invoice_number: "25800002", buyer_name: "购买方", seller_name: "销售方", invoice_items: [{ item_name: "技术服务", tax_rate: "6%" }] } }
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ output: [{ content: [{ type: "output_text", text: JSON.stringify(output) }] }] }) })))
+
+    const result = await recognizeInvoice({ recognitionType: "INVOICE", filename: "invoice.png", mimeType: "image/png", base64Data: "aW1hZ2U=" })
+
+    expect(result.data).toMatchObject({ invoiceType: "VAT_SPECIAL", invoiceNumber: "25800002", buyerName: "购买方", sellerName: "销售方", items: [{ itemName: "技术服务", taxRate: "6%" }] })
+    expect(result.data).not.toHaveProperty("invoiceDate")
+  })
+
+  it("reports an incomplete result instead of exposing schema validation details", async () => {
+    process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ output: [{ content: [{ type: "output_text", text: "{}" }] }] }) })))
+
+    await expect(recognizeInvoice({ recognitionType: "INVOICE", filename: "invoice.png", mimeType: "image/png", base64Data: "aW1hZ2U=" })).rejects.toThrow("发票识别不完整，缺少：购买方名称、销售方名称、商品明细")
+  })
+
   it("retries a transient provider network failure once", async () => {
     process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
     const output = { invoiceType: "VAT_NORMAL", invoiceNumber: "25800001", invoiceDate: "2026-08-13", buyerName: "购买方", buyerTaxId: null, sellerName: "销售方", sellerTaxId: null, subtotal: "1.00", totalTax: "0.06", totalAmount: "1.06", totalAmountInWords: null, remarks: null, drawer: null, items: [{ itemName: "服务", specification: null, unit: null, quantity: "1", unitPrice: "1", amount: "1", taxRate: "6%", taxAmount: "0.06" }] }
