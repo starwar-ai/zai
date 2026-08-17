@@ -4,6 +4,7 @@ import helmet from "helmet"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { errorHandler } from "./middleware/error-handler.js"
+import { requireExternalApiKey } from "./middleware/external-api-key.js"
 import { registerOpenApi } from "./openapi.js"
 import { routes } from "./routes/index.js"
 
@@ -14,6 +15,8 @@ export function createApp(): Express {
   registerOpenApi(app)
   app.use(helmet())
   app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5174" }))
+  // 批量抠图最多携带 5 张 8MB 图片；先鉴权再为该路径放宽 JSON 体积，避免扩大其他接口边界。
+  app.use("/api/external/image-cutout/remove-background/batch", requireExternalApiKey, express.json({ limit: "60mb" }))
   app.use(express.json({ limit: "15mb" }))
   app.use(routes)
 

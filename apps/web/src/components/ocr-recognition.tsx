@@ -7,7 +7,7 @@ import { Alert, Badge, Button, Card, CardContent, ConfirmDialog, Dialog, EmptySt
 
 const EMPTY_HISTORY: ListResponse<OcrRecognitionRecord> = { items: [], total: 0, page: 1, pageSize: 20, pageCount: 1 }
 const STATUS_LABELS: Record<OcrRecognitionStatus, string> = { RECOGNIZING: "识别中", SUCCESS: "识别成功", FAILED: "识别失败" }
-const METHOD_LABELS = { QR: "二维码直读", AI: "AI 识别", HYBRID: "二维码 + AI", PDF_TEXT: "PDF 文本解析" } as const
+const METHOD_LABELS = { QR: "二维码直读", AI: "AI 识别", HYBRID: "二维码 + AI", PDF_TEXT: "PDF 文本解析", PDF_TEXT_AI: "PDF 文本 + AI" } as const
 const INVOICE_TYPE_LABELS = { VAT_NORMAL: "普通发票", VAT_SPECIAL: "增值税专用发票" } as const
 const ACCEPTED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"] as const
 type AcceptedType = typeof ACCEPTED_TYPES[number]

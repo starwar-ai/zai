@@ -30,6 +30,7 @@
     "fflate": "^0.8.3",
     "helmet": "^8.0.0",
     "jsqr": "^1.4.0",
+    "onnxruntime-web": "1.21.0",
     "pdfjs-dist": "^5.6.205",
     "swagger-ui-express": "^5.0.1",
     "tsx": "^4.20.6",

@@ -19,6 +19,8 @@ describe("OpenAPI document", () => {
     expect(openApiDocument.paths).toHaveProperty("/api/external/navigation-routes/recognize/batch")
     expect(openApiDocument.paths).toHaveProperty("/api/external/image-search/search")
     expect(openApiDocument.paths).toHaveProperty("/api/external/image-search/assets/{id}/image")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/image-cutout/remove-background")
+    expect(openApiDocument.paths).toHaveProperty("/api/external/image-cutout/remove-background/batch")
     const refs: string[] = []; collectRefs(openApiDocument, refs)
     for (const ref of refs) {
       expect(ref.startsWith("#/components/")).toBe(true)

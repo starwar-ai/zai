@@ -5,8 +5,8 @@ export const openApiDocument = {
   openapi: "3.0.3",
   info: {
     title: "ZForm 外部服务 API",
-    version: "1.5.0",
-    description: `提供报关品名转换、支付截图识别、电子发票识别、火车票识别、导航截图识别与以图搜图能力。
+    version: "1.6.0",
+    description: `提供报关品名转换、支付截图识别、电子发票识别、火车票识别、导航截图识别、以图搜图与智能抠图能力。
 
 ## 鉴权
 
@@ -23,12 +23,12 @@ export const openApiDocument = {
 
 ## 图片、电子发票与火车票文件
 
-文件内容使用标准 Base64，不要包含 \`data:image/png;base64,\` 等 Data URL 前缀。支付截图、导航截图、电子发票和火车票单文件解码后最大 10MB；以图搜图查询图片最大 8MB。图片支持 JPEG、PNG、WebP，电子发票还支持 PDF；火车票仅支持带可提取文本层的铁路电子客票 PDF，扫描件暂不支持。
+文件内容使用标准 Base64，不要包含 \`data:image/png;base64,\` 等 Data URL 前缀。支付截图、导航截图、电子发票和火车票单文件解码后最大 10MB；以图搜图与智能抠图输入图片最大 8MB。图片支持 JPEG、PNG、WebP，电子发票还支持 PDF；火车票仅支持带可提取文本层的铁路电子客票 PDF，扫描件暂不支持。
 
-以图搜图结果中的 \`imagePath\` 是相对路径，读取结果原图时必须继续携带有效 API Key。`,
+智能抠图由服务端本地 ISNet 量化模型处理；首次请求需要下载约 44MB 模型资源，后续请求复用进程内模型会话。以图搜图结果中的 \`imagePath\` 是相对路径，读取结果原图时必须继续携带有效 API Key。`,
   },
   servers: [{ url: "/", description: "当前服务" }],
-  tags: [{ name: "报关品名", description: "外部报关品名转换接口" }, { name: "支付截图", description: "外部支付截图识别接口" }, { name: "电子发票", description: "外部电子发票识别接口" }, { name: "火车票", description: "外部铁路电子客票识别接口" }, { name: "导航截图", description: "外部导航路线截图识别接口" }, { name: "以图搜图", description: "基于公共已索引图库的相似图片检索接口" }],
+  tags: [{ name: "报关品名", description: "外部报关品名转换接口" }, { name: "支付截图", description: "外部支付截图识别接口" }, { name: "电子发票", description: "外部电子发票识别接口" }, { name: "火车票", description: "外部铁路电子客票识别接口" }, { name: "导航截图", description: "外部导航路线截图识别接口" }, { name: "以图搜图", description: "基于公共已索引图库的相似图片检索接口" }, { name: "智能抠图", description: "服务端本地模型背景移除与规格化输出接口" }],
   paths: {
     "/api/external/payments/recognize": {
       post: {
@@ -60,9 +60,9 @@ export const openApiDocument = {
     },
     "/api/external/train-tickets/recognize": {
       post: {
-        tags: ["火车票"], summary: "识别单张铁路电子客票", description: "同步解析一份带文本层的铁路电子客票 PDF，提取发票、行程、车次座位、乘客、票价和购买方字段。扫描件或非铁路电子客票返回 HTTP 422。识别记录按调用方 API Key 的哈希身份隔离保存。", operationId: "recognizeExternalTrainTicket", security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
+        tags: ["火车票"], summary: "识别单张铁路电子客票", description: "同步解析一份带文本层的铁路电子客票 PDF，提取发票、行程、车次座位、乘客、票价和购买方字段。优先使用 TRAIN_TICKET_OCR_PROVIDER 与 TRAIN_TICKET_OCR_MODEL；未配置时回退到项目公共 LLM_PROVIDER_ORDER。扫描件或非铁路电子客票返回 HTTP 422。识别记录按调用方 API Key 的哈希身份隔离保存。", operationId: "recognizeExternalTrainTicket", security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalTrainTicketRecognizeRequest" }, example: { filename: "railway-ticket.pdf", mimeType: "application/pdf", base64Data: "JVBERi0xLjQ...", clientRequestId: "ERP-TRAIN-001" } } } },
-        responses: { "200": { description: "识别成功；票面缺失或无法可靠提取的可选字段会省略。", content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalTrainTicketRecognizeResponse" }, example: { success: true, message: "火车票识别完成", data: { recognitionId: "6b552553-6487-40fc-bd1d-123e7706d513", originalFilename: "railway-ticket.pdf", extractionMethod: "PDF_TEXT", clientRequestId: "ERP-TRAIN-001", trainInvoiceNo: "25112000000000123456", trainIssueDate: "2026年08月15日", departureStation: "北京南站", arrivalStation: "上海虹桥站", trainNo: "G101", departureDate: "2026年08月14日", departureTime: "08:00", seatNo: "03车12A号", seatClass: "二等座", ticketPrice: "553.00", passengerId: "140102******1453", passengerName: "张凯", ticketNo: "123456789012345678", trainBuyerName: "示例科技有限公司", trainBuyerCreditCode: "91110000123456789X" } } } } }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "413": { $ref: "#/components/responses/PayloadTooLarge" }, "422": { $ref: "#/components/responses/Unprocessable" }, "503": { $ref: "#/components/responses/Unavailable" } },
+        responses: { "200": { description: "识别成功；票面缺失或无法可靠提取的可选字段会省略。", content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalTrainTicketRecognizeResponse" }, example: { success: true, message: "火车票识别完成", data: { recognitionId: "6b552553-6487-40fc-bd1d-123e7706d513", originalFilename: "railway-ticket.pdf", extractionMethod: "PDF_TEXT_AI", clientRequestId: "ERP-TRAIN-001", trainInvoiceNo: "25112000000000123456", trainIssueDate: "2026年08月15日", departureStation: "北京南站", arrivalStation: "上海虹桥站", trainNo: "G101", departureDate: "2026年08月14日", departureTime: "08:00", seatNo: "03车12A号", seatClass: "二等座", ticketPrice: "553.00", passengerId: "140102******1453", passengerName: "张凯", ticketNo: "123456789012345678", trainBuyerName: "示例科技有限公司", trainBuyerCreditCode: "91110000123456789X" } } } } }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "413": { $ref: "#/components/responses/PayloadTooLarge" }, "422": { $ref: "#/components/responses/Unprocessable" }, "503": { $ref: "#/components/responses/Unavailable" } },
       },
     },
     "/api/external/train-tickets/recognize/batch": {
@@ -145,6 +145,20 @@ export const openApiDocument = {
         },
       },
     },
+    "/api/external/image-cutout/remove-background": {
+      post: {
+        tags: ["智能抠图"], summary: "移除单张图片背景", description: "同步移除一张图片背景，并按指定底色、方形画布、留白和格式输出 Base64 图片。edge 省略时保留原始画布尺寸；JPG 不支持透明通道，backgroundMode=transparent 时自动使用白底。图片不会写入数据库。", operationId: "removeExternalImageBackground", security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalImageCutoutRequest" }, example: { filename: "product.webp", mimeType: "image/webp", base64Data: "UklGRiQAAABXRUJQVlA4...", backgroundMode: "transparent", outputFormat: "png", edge: 1600, padding: 0.08, clientRequestId: "PIM-CUTOUT-001" } } } },
+        responses: { "200": { description: "抠图及规格化输出完成", content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalImageCutoutResponse" }, example: { success: true, message: "图片抠图完成", data: { originalFilename: "product.webp", outputFilename: "product_cutout.png", mimeType: "image/png", base64Data: "iVBORw0KGgo...", originalWidth: 1200, originalHeight: 900, outputWidth: 1600, outputHeight: 1600, engine: "isnet_quint8", processingMs: 2380, clientRequestId: "PIM-CUTOUT-001" } } } } }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "413": { $ref: "#/components/responses/CutoutPayloadTooLarge" }, "422": { $ref: "#/components/responses/Unprocessable" }, "503": { $ref: "#/components/responses/Unavailable" } },
+      },
+    },
+    "/api/external/image-cutout/remove-background/batch": {
+      post: {
+        tags: ["智能抠图"], summary: "批量移除图片背景", description: "单次最多 5 张，按输入顺序串行处理并逐项返回；串行执行用于控制 1024×1024 模型推理的内存峰值。单项失败不会中断整批。", operationId: "removeExternalImageBackgroundsBatch", security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalImageCutoutBatchRequest" }, example: { items: [{ filename: "product-001.jpg", mimeType: "image/jpeg", base64Data: "/9j/4AAQSk...", backgroundMode: "white", outputFormat: "jpg", edge: 1600, padding: 0.08, clientRequestId: "PIM-CUTOUT-001" }, { filename: "product-002.png", mimeType: "image/png", base64Data: "iVBORw0KGgo...", backgroundMode: "color", backgroundColor: "#F4F0E9", outputFormat: "png", edge: 1000, padding: 0.1, clientRequestId: "PIM-CUTOUT-002" }] } } } },
+        responses: { "200": { description: "整批处理完成；items 中包含每项成品或失败原因。", content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalImageCutoutBatchResponse" } } } }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "503": { $ref: "#/components/responses/Unavailable" } },
+      },
+    },
     "/api/external/image-search/search": {
       post: {
         tags: ["以图搜图"],
@@ -208,7 +222,7 @@ export const openApiDocument = {
         type: "object", additionalProperties: false, required: ["filename", "mimeType", "base64Data"], properties: { filename: { type: "string", minLength: 1, maxLength: 255, description: "包含 .pdf 扩展名的铁路电子客票文件名" }, mimeType: { type: "string", enum: ["application/pdf"], description: "固定为 application/pdf" }, base64Data: { type: "string", minLength: 4, maxLength: 14000000, pattern: "^[A-Za-z0-9+/]+={0,2}$", description: "标准 Base64 PDF 内容，不含 Data URL 前缀；解码后最大 10MB" }, clientRequestId: { type: "string", minLength: 1, maxLength: 100, description: "调用方请求号，将原样返回，便于关联业务记录" } },
       },
       ExternalTrainTicketRecognizeResult: {
-        type: "object", required: ["recognitionId", "originalFilename", "extractionMethod"], properties: { recognitionId: { type: "string", format: "uuid", description: "服务端识别记录 ID" }, originalFilename: { type: "string" }, clientRequestId: { type: "string" }, extractionMethod: { type: "string", enum: ["PDF_TEXT"], description: "从 PDF 原生文本层解析" }, trainInvoiceNo: { type: "string", description: "铁路电子客票发票号码" }, trainIssueDate: { type: "string", description: "开票日期，保留票面格式" }, departureStation: { type: "string" }, arrivalStation: { type: "string" }, trainNo: { type: "string", description: "车次，如 G101" }, departureDate: { type: "string", description: "乘车日期，保留票面格式" }, departureTime: { type: "string", description: "发车时间，如 08:00" }, seatNo: { type: "string", description: "车厢与座位号" }, seatClass: { type: "string", description: "席别，如二等座、商务座" }, ticketPrice: { type: "string", description: "票价数值，保留票面精度，不含货币符号" }, passengerId: { type: "string", description: "票面身份证号，通常为脱敏格式" }, passengerName: { type: "string" }, ticketNo: { type: "string", description: "电子客票号" }, trainBuyerName: { type: "string", description: "购买方名称" }, trainBuyerCreditCode: { type: "string", description: "购买方统一社会信用代码" } },
+        type: "object", required: ["recognitionId", "originalFilename", "extractionMethod"], properties: { recognitionId: { type: "string", format: "uuid", description: "服务端识别记录 ID" }, originalFilename: { type: "string" }, clientRequestId: { type: "string" }, extractionMethod: { type: "string", enum: ["PDF_TEXT_AI"], description: "PDF 文本层提取结合专用或公共模型结构化识别" }, trainInvoiceNo: { type: "string", description: "铁路电子客票发票号码" }, trainIssueDate: { type: "string", description: "开票日期，保留票面格式" }, departureStation: { type: "string" }, arrivalStation: { type: "string" }, trainNo: { type: "string", description: "车次，如 G101" }, departureDate: { type: "string", description: "乘车日期，保留票面格式" }, departureTime: { type: "string", description: "发车时间，如 08:00" }, seatNo: { type: "string", description: "车厢与座位号" }, seatClass: { type: "string", description: "席别，如二等座、商务座" }, ticketPrice: { type: "string", description: "票价数值，保留票面精度，不含货币符号" }, passengerId: { type: "string", description: "票面身份证号，通常为脱敏格式" }, passengerName: { type: "string" }, ticketNo: { type: "string", description: "电子客票号" }, trainBuyerName: { type: "string", description: "购买方名称" }, trainBuyerCreditCode: { type: "string", description: "购买方统一社会信用代码" } },
       },
       ExternalTrainTicketBatchRecognizeRequest: { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array", minItems: 1, maxItems: 10, items: { $ref: "#/components/schemas/ExternalTrainTicketRecognizeRequest" } } } },
       ExternalTrainTicketBatchItemResult: { oneOf: [{ type: "object", required: ["index", "success", "data"], properties: { index: { type: "integer", minimum: 0 }, success: { type: "boolean", enum: [true] }, clientRequestId: { type: "string" }, data: { $ref: "#/components/schemas/ExternalTrainTicketRecognizeResult" } } }, { type: "object", required: ["index", "success", "filename", "error"], properties: { index: { type: "integer", minimum: 0 }, success: { type: "boolean", enum: [false] }, filename: { type: "string" }, clientRequestId: { type: "string" }, error: { type: "string" } } }] },
@@ -285,6 +299,34 @@ export const openApiDocument = {
         type: "object", required: ["success", "message", "data"],
         properties: { success: { type: "boolean", example: true }, message: { type: "string", example: "批量报关品名转换完成" }, data: { $ref: "#/components/schemas/ExternalDeclarationNameBatchConvertResult" } },
       },
+      ExternalImageCutoutRequest: {
+        type: "object", additionalProperties: false, required: ["filename", "mimeType", "base64Data"],
+        properties: {
+          filename: { type: "string", minLength: 1, maxLength: 255, description: "包含扩展名的原图片文件名" },
+          mimeType: { type: "string", enum: ["image/jpeg", "image/png", "image/webp"], description: "必须与图片魔数对应" },
+          base64Data: { type: "string", minLength: 4, maxLength: 11200000, pattern: "^[A-Za-z0-9+/]+={0,2}$", description: "标准 Base64 图片内容，不含 Data URL 前缀；解码后最大 8MB" },
+          backgroundMode: { type: "string", enum: ["transparent", "white", "color"], default: "transparent", description: "透明、纯白或自定义底色；JPG 输出时 transparent 按白底处理" },
+          backgroundColor: { type: "string", pattern: "^#[0-9a-fA-F]{6}$", example: "#F4F0E9", description: "backgroundMode=color 时必填" },
+          outputFormat: { type: "string", enum: ["png", "jpg"], default: "png" },
+          edge: { type: "integer", minimum: 256, maximum: 4096, description: "输出方形画布边长；省略时保留原图宽高" },
+          padding: { type: "number", minimum: 0, maximum: 0.2, default: 0.08, description: "主体相对画布每侧留白比例" },
+          clientRequestId: { type: "string", minLength: 1, maxLength: 100, description: "调用方请求号，将原样返回" },
+        },
+      },
+      ExternalImageCutoutResult: {
+        type: "object", required: ["originalFilename", "outputFilename", "mimeType", "base64Data", "originalWidth", "originalHeight", "outputWidth", "outputHeight", "engine", "processingMs"],
+        properties: {
+          originalFilename: { type: "string" }, outputFilename: { type: "string" }, mimeType: { type: "string", enum: ["image/png", "image/jpeg"] },
+          base64Data: { type: "string", description: "抠图成品的标准 Base64 内容，不含 Data URL 前缀" },
+          originalWidth: { type: "integer", minimum: 1 }, originalHeight: { type: "integer", minimum: 1 }, outputWidth: { type: "integer", minimum: 1 }, outputHeight: { type: "integer", minimum: 1 },
+          engine: { type: "string", enum: ["isnet_quint8"] }, processingMs: { type: "integer", minimum: 1, description: "包含排队、首次模型加载和推理导出的总耗时" }, clientRequestId: { type: "string" },
+        },
+      },
+      ExternalImageCutoutBatchRequest: { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array", minItems: 1, maxItems: 5, items: { $ref: "#/components/schemas/ExternalImageCutoutRequest" } } } },
+      ExternalImageCutoutBatchItemResult: { oneOf: [{ type: "object", required: ["index", "success", "data"], properties: { index: { type: "integer", minimum: 0 }, success: { type: "boolean", enum: [true] }, clientRequestId: { type: "string" }, data: { $ref: "#/components/schemas/ExternalImageCutoutResult" } } }, { type: "object", required: ["index", "success", "filename", "error"], properties: { index: { type: "integer", minimum: 0 }, success: { type: "boolean", enum: [false] }, filename: { type: "string" }, clientRequestId: { type: "string" }, error: { type: "string" } } }] },
+      ExternalImageCutoutBatchResult: { type: "object", required: ["totalCount", "successCount", "failedCount", "items"], properties: { totalCount: { type: "integer", minimum: 0 }, successCount: { type: "integer", minimum: 0 }, failedCount: { type: "integer", minimum: 0 }, items: { type: "array", items: { $ref: "#/components/schemas/ExternalImageCutoutBatchItemResult" } } } },
+      ExternalImageCutoutResponse: { type: "object", required: ["success", "message", "data"], properties: { success: { type: "boolean", example: true }, message: { type: "string", example: "图片抠图完成" }, data: { $ref: "#/components/schemas/ExternalImageCutoutResult" } } },
+      ExternalImageCutoutBatchResponse: { type: "object", required: ["success", "message", "data"], properties: { success: { type: "boolean", example: true }, message: { type: "string", example: "批量图片抠图完成" }, data: { $ref: "#/components/schemas/ExternalImageCutoutBatchResult" } } },
       ExternalImageSearchRequest: {
         type: "object", additionalProperties: false, required: ["filename", "mimeType", "base64Data"],
         properties: {
@@ -320,6 +362,7 @@ export const openApiDocument = {
       Unauthorized: { description: "API Key 缺失或无效", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
       PayloadTooLarge: { description: "Base64 解码后的单文件超过 10MB", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" }, example: { success: false, message: "单个文件不能超过 10MB。", data: null } } } },
       ImagePayloadTooLarge: { description: "Base64 解码后的查询图片超过 8MB", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" }, example: { success: false, message: "单张图片不能超过 8MB。", data: null } } } },
+      CutoutPayloadTooLarge: { description: "抠图输入超过 8MB，或图片尺寸超过 4096×4096 / 1600 万像素", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" }, example: { success: false, message: "单张图片不能超过 8MB。", data: null } } } },
       Unprocessable: { description: "文件已接收但识别失败", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
       NotFound: { description: "指定资源不存在", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
       Unavailable: { description: "外部接口或模型服务尚未正确配置", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },

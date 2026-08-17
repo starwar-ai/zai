@@ -9,6 +9,7 @@ import { recognizeNavigationRoute } from "./route-ocr-provider.js"
 import { extractInvoicePdf, qrInvoiceData, type InvoiceQrResult } from "./invoice-qr-service.js"
 import { extractInvoiceTextFromPdf } from "./invoice-qr-service.js"
 import { assertTrainTicketText, parseTrainTicketText } from "./train-ticket-parser.js"
+import { recognizeTrainTicketText } from "./train-ticket-ocr-provider.js"
 
 function invoiceItems(value: Prisma.JsonValue): OcrInvoiceItem[] {
   if (!Array.isArray(value)) return []
@@ -17,7 +18,7 @@ function invoiceItems(value: Prisma.JsonValue): OcrInvoiceItem[] {
 function routeWaypoints(value: Prisma.JsonValue): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [] }
 function toRecord(row: OcrRecognition): OcrRecognitionRecord {
   return {
-    id: row.id, recognitionType: row.recognitionType === "INVOICE" ? "INVOICE" : row.recognitionType === "NAVIGATION_ROUTE" ? "NAVIGATION_ROUTE" : row.recognitionType === "TRAIN_TICKET" ? "TRAIN_TICKET" : "PAYMENT", ...(row.extractionMethod === "QR" || row.extractionMethod === "AI" || row.extractionMethod === "HYBRID" || row.extractionMethod === "PDF_TEXT" ? { extractionMethod: row.extractionMethod } : {}), originalFilename: row.originalFilename, mimeType: row.mimeType,
+    id: row.id, recognitionType: row.recognitionType === "INVOICE" ? "INVOICE" : row.recognitionType === "NAVIGATION_ROUTE" ? "NAVIGATION_ROUTE" : row.recognitionType === "TRAIN_TICKET" ? "TRAIN_TICKET" : "PAYMENT", ...(row.extractionMethod === "QR" || row.extractionMethod === "AI" || row.extractionMethod === "HYBRID" || row.extractionMethod === "PDF_TEXT" || row.extractionMethod === "PDF_TEXT_AI" ? { extractionMethod: row.extractionMethod } : {}), originalFilename: row.originalFilename, mimeType: row.mimeType,
     status: row.status === "SUCCESS" ? "SUCCESS" : row.status === "FAILED" ? "FAILED" : "RECOGNIZING",
     ...(row.invoiceType === "VAT_NORMAL" || row.invoiceType === "VAT_SPECIAL" ? { invoiceType: row.invoiceType } : {}),
     ...(row.invoiceNumber ? { invoiceNumber: row.invoiceNumber } : {}), ...(row.invoiceDate ? { invoiceDate: row.invoiceDate } : {}),
@@ -59,7 +60,10 @@ export async function recognizeOcr(userId: string, input: OcrRecognizeRequest): 
       if (!rawText) throw new Error("无法从 PDF 中提取文本，请确认文件不是扫描件且包含可选择的文字")
       const trainTicket = parseTrainTicketText(rawText)
       assertTrainTicketText(rawText, trainTicket)
-      const updated = await prisma.ocrRecognition.update({ where: { id: created.id }, data: { status: "SUCCESS", extractionMethod: "PDF_TEXT", ...trainTicket, rawJson: { parser: "pdfjs-regex-v1", textLength: rawText.length }, model: "pdfjs-regex-v1", errorMessage: null } })
+      const recognized = await recognizeTrainTicketText(rawText)
+      const data = { ...trainTicket, ...recognized.data }
+      assertTrainTicketText(rawText, data)
+      const updated = await prisma.ocrRecognition.update({ where: { id: created.id }, data: { status: "SUCCESS", extractionMethod: "PDF_TEXT_AI", ...data, rawJson: { ...recognized.raw, parser: "pdfjs-regex-v1", textLength: rawText.length }, model: recognized.model, errorMessage: null } })
       return { record: toRecord(updated), success: true }
     }
     let qr: InvoiceQrResult | null = null
@@ -117,7 +121,7 @@ export async function recognizeExternalTrainTicket(actor: string, input: Externa
   const result = await recognizeOcr(actor, { recognitionType: "TRAIN_TICKET", filename: input.filename, mimeType: input.mimeType, base64Data: input.base64Data })
   if (!result.success) throw new BusinessError(result.record.errorMessage || "火车票识别失败。", 422)
   return {
-    recognitionId: result.record.id, originalFilename: result.record.originalFilename, extractionMethod: "PDF_TEXT",
+    recognitionId: result.record.id, originalFilename: result.record.originalFilename, extractionMethod: "PDF_TEXT_AI",
     ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
     ...(result.record.trainInvoiceNo ? { trainInvoiceNo: result.record.trainInvoiceNo } : {}), ...(result.record.trainIssueDate ? { trainIssueDate: result.record.trainIssueDate } : {}),
     ...(result.record.departureStation ? { departureStation: result.record.departureStation } : {}), ...(result.record.arrivalStation ? { arrivalStation: result.record.arrivalStation } : {}), ...(result.record.trainNo ? { trainNo: result.record.trainNo } : {}),

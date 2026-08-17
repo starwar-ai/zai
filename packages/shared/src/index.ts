@@ -384,7 +384,7 @@ export interface OcrInvoiceItem { itemName?: string; specification?: string; uni
 export type OcrInvoiceType = "VAT_NORMAL" | "VAT_SPECIAL"
 export interface OcrInvoiceData { invoiceType?: OcrInvoiceType; invoiceNumber?: string; invoiceDate?: string; buyerName?: string; buyerTaxId?: string; sellerName?: string; sellerTaxId?: string; subtotal?: string; totalTax?: string; totalAmount?: string; totalAmountInWords?: string; remarks?: string; drawer?: string; items: OcrInvoiceItem[] }
 export interface OcrTrainTicketData { trainInvoiceNo?: string; trainIssueDate?: string; departureStation?: string; arrivalStation?: string; trainNo?: string; departureDate?: string; departureTime?: string; seatNo?: string; seatClass?: string; ticketPrice?: string; passengerId?: string; passengerName?: string; ticketNo?: string; trainBuyerName?: string; trainBuyerCreditCode?: string }
-export type OcrExtractionMethod = "QR" | "AI" | "HYBRID" | "PDF_TEXT"
+export type OcrExtractionMethod = "QR" | "AI" | "HYBRID" | "PDF_TEXT" | "PDF_TEXT_AI"
 export interface OcrRecognitionRecord extends OcrInvoiceData, OcrPaymentData, OcrRouteData, OcrTrainTicketData { id: string; recognitionType: OcrRecognitionType; extractionMethod?: OcrExtractionMethod; originalFilename: string; mimeType: string; status: OcrRecognitionStatus; errorMessage?: string; createdAt: string; updatedAt: string }
 export interface OcrRecognizeRequest { recognitionType: OcrRecognitionType; filename: string; mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
 export interface OcrRecognizeResult { record: OcrRecognitionRecord; success: boolean }
@@ -461,7 +461,7 @@ export interface ExternalTrainTicketRecognizeRequest {
 export interface ExternalTrainTicketRecognizeResult extends OcrTrainTicketData {
   recognitionId: string
   originalFilename: string
-  extractionMethod: "PDF_TEXT"
+  extractionMethod: "PDF_TEXT_AI"
   clientRequestId?: string
 }
 export interface ExternalTrainTicketBatchRecognizeRequest { items: ExternalTrainTicketRecognizeRequest[] }
@@ -567,6 +567,51 @@ export interface ExternalDeclarationNameBatchConvertResult {
   successCount: number
   failedCount: number
   items: ExternalDeclarationNameBatchItemResult[]
+}
+
+export type ImageCutoutMimeType = "image/jpeg" | "image/png" | "image/webp"
+export type ImageCutoutBackgroundMode = "transparent" | "white" | "color"
+export type ImageCutoutExportFormat = "png" | "jpg"
+
+export interface ExternalImageCutoutRequest {
+  filename: string
+  mimeType: ImageCutoutMimeType
+  base64Data: string
+  backgroundMode?: ImageCutoutBackgroundMode
+  backgroundColor?: string
+  outputFormat?: ImageCutoutExportFormat
+  edge?: number
+  padding?: number
+  clientRequestId?: string
+}
+
+export interface ExternalImageCutoutResult {
+  originalFilename: string
+  outputFilename: string
+  mimeType: "image/png" | "image/jpeg"
+  base64Data: string
+  originalWidth: number
+  originalHeight: number
+  outputWidth: number
+  outputHeight: number
+  engine: "isnet_quint8"
+  processingMs: number
+  clientRequestId?: string
+}
+
+export interface ExternalImageCutoutBatchRequest {
+  items: ExternalImageCutoutRequest[]
+}
+
+export type ExternalImageCutoutBatchItemResult =
+  | { index: number; success: true; clientRequestId?: string; data: ExternalImageCutoutResult }
+  | { index: number; success: false; filename: string; clientRequestId?: string; error: string }
+
+export interface ExternalImageCutoutBatchResult {
+  totalCount: number
+  successCount: number
+  failedCount: number
+  items: ExternalImageCutoutBatchItemResult[]
 }
 
 export interface GeneratedDeclarationName {

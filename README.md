@@ -174,6 +174,8 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | POST | `/api/external/navigation-routes/recognize/batch` | 使用 API Key 批量识别导航路线截图，逐项返回结果 |
 | POST | `/api/external/image-search/search` | 使用 API Key 上传查询图片并返回 Top-K 相似图片 |
 | GET | `/api/external/image-search/assets/:id/image` | 使用 API Key 获取搜索结果原图 |
+| POST | `/api/external/image-cutout/remove-background` | 使用 API Key 对单张图片执行本地模型抠图并返回 Base64 成品 |
+| POST | `/api/external/image-cutout/remove-background/batch` | 使用 API Key 批量抠图最多 5 张，逐项返回结果 |
 | POST | `/api/external/invoices/recognize` | 使用 API Key 同步识别单张 PDF/图片电子发票 |
 | POST | `/api/external/invoices/recognize/batch` | 使用 API Key 批量识别最多 10 张电子发票，逐项返回结果 |
 | POST | `/api/external/train-tickets/recognize` | 使用 API Key 同步识别单张铁路电子客票 PDF |
@@ -191,11 +193,13 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 }
 ```
 
-外部报关品名、支付截图、电子发票、导航截图和以图搜图接口使用 `X-API-Key`（也支持 `Authorization: Bearer <key>`）鉴权。开发环境在 `apps/api/.env` 配置 `EXTERNAL_API_KEYS` 后，可打开 `http://localhost:3100/api-docs`，点击 **Authorize** 输入密钥并直接调试。多个调用方密钥以英文逗号分隔。报关品名接口优先复用已审核映射，未命中时同步调用模型；`qualified=false` 或 `reviewRequired=true` 的结果必须进入人工复核，不能直接用于正式申报。导航截图接口仅接受 JPEG、PNG、WebP 的标准 Base64 内容，单张解码后最大 10MB；调用方应根据 `routeResultStatus` 与 `confidence` 判断是否需要人工复核。
+外部报关品名、支付截图、电子发票、导航截图、以图搜图和智能抠图接口使用 `X-API-Key`（也支持 `Authorization: Bearer <key>`）鉴权。开发环境在 `apps/api/.env` 配置 `EXTERNAL_API_KEYS` 后，可打开 `http://localhost:3100/api-docs`，点击 **Authorize** 输入密钥并直接调试。多个调用方密钥以英文逗号分隔。报关品名接口优先复用已审核映射，未命中时同步调用模型；`qualified=false` 或 `reviewRequired=true` 的结果必须进入人工复核，不能直接用于正式申报。导航截图接口仅接受 JPEG、PNG、WebP 的标准 Base64 内容，单张解码后最大 10MB；调用方应根据 `routeResultStatus` 与 `confidence` 判断是否需要人工复核。
 
 外部支付截图接口仅接受 JPEG、PNG、WebP 的标准 Base64 内容，单张解码后最大 10MB。结果包含平台、订单号、商品名称、金额、支付时间、支付状态、支付方式和收款方；批量接口单次最多 10 张、并发 2 张，单项失败不会中断其余项目，识别记录按 API Key 哈希后的调用方身份隔离保存。
 
 外部以图搜图接口仅接受 JPEG、PNG、WebP，查询图片解码后最大 8MB，`topK` 范围为 1–50。查询原图和结果快照按 API Key 哈希身份隔离保存；结果中的 `imagePath` 为相对地址，读取原图时需要继续携带有效 API Key。
+
+外部智能抠图接口仅接受 JPEG、PNG、WebP，单张解码后最大 8MB，尺寸不超过 4096×4096 且总像素不超过 1600 万。接口支持透明、白色或 `#RRGGBB` 自定义底色，PNG/JPG 输出、0–20% 留白及可选 256–4096 方形画布；省略 `edge` 时保留原图宽高。服务端使用 `isnet_quint8` 本地推理，图片不写入数据库；首次调用会下载约 44MB 模型，批量接口最多 5 张并串行推理。
 
 外部电子发票接口复用同一套 `EXTERNAL_API_KEYS` 鉴权与统一响应结构。文件通过不带 Data URL 前缀的 Base64 传入，单文件最大 10MB；识别记录按 API Key 哈希后的外部调用方身份隔离保存。批量接口单次最多 10 张、并发 2 张，单项失败不会中断其余项目。
 
@@ -309,14 +313,17 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `OPENAI_API_KEY` / `OPENAI_MODEL`：OpenAI Responses API 配置
 - `ARK_API_KEY` / `ARK_MODEL` / `ARK_BASE_URL`：火山方舟 OpenAI-compatible 配置
 - `OCR_PROVIDER` / `OCR_MODEL`：电子发票识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时完全回退到 `LLM_PROVIDER_ORDER` 和对应供应商的系统模型配置
-- `PAYMENT_OCR_MODEL`：支付截图识别的可选 OpenAI 模型；留空时使用 `OPENAI_MODEL`
-- `ROUTE_OCR_MODEL`：导航截图识别的可选 OpenAI Vision 模型；留空时使用 `OPENAI_MODEL`
+- `TRAIN_TICKET_OCR_PROVIDER` / `TRAIN_TICKET_OCR_MODEL`：火车票识别专用供应商和模型，必须同时配置或同时留空；两者留空时回退到 `LLM_PROVIDER_ORDER` 中首个已配置 API Key 的供应商及其公共模型
+- `PAYMENT_OCR_PROVIDER` / `PAYMENT_OCR_MODEL`：支付截图识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时回退到 `LLM_PROVIDER_ORDER` 中首个已配置且支持图片输入的供应商及其系统模型
+- `ROUTE_OCR_PROVIDER` / `ROUTE_OCR_MODEL`：导航截图识别模块指定供应商和视觉模型，必须同时配置或同时留空；两者留空时从 `LLM_PROVIDER_ORDER` 中选择首个已配置 API Key、公共模型且支持图片输入的供应商
 - `IMAGE_SEARCH_MODEL`：图片视觉索引与查询特征提取模型；留空时使用 `OPENAI_MODEL`，模型必须支持图片输入和严格 JSON Schema 输出
 - `KIMI_API_KEY` / `KIMI_MODEL` / `KIMI_BASE_URL`：Kimi OpenAI-compatible 配置
 - `MINIMAX_API_KEY` / `MINIMAX_MODEL` / `MINIMAX_BASE_URL`：MiniMax Anthropic-compatible 配置
 - `AUTO_APPROVE_CONFIDENCE`：自动通过置信度，默认 `0.9`
 - `MAX_BATCH_RESOLVE`：单次查询或生成上限，默认 `100`
 - `EXTERNAL_API_KEYS`：外部转换接口密钥，多个密钥以英文逗号分隔；未配置时接口返回 503
+- `IMAGE_CUTOUT_MODEL_BASE_URL`：可选的抠图模型资源根地址；默认使用 IMG.LY 1.7.0 模型资源，可改为企业内网镜像，目录需包含 `resources.json` 和对应分片
+- `IMAGE_CUTOUT_THREADS`：抠图 WASM 推理线程数，范围 1–4，默认 1
 
 前端可通过 `VITE_API_BASE` 指向独立部署的 API；开发模式默认使用 Vite 代理。
 
