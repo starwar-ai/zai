@@ -199,7 +199,7 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 
 外部以图搜图接口仅接受 JPEG、PNG、WebP，查询图片解码后最大 8MB，`topK` 范围为 1–50。查询原图和结果快照按 API Key 哈希身份隔离保存；结果中的 `imagePath` 为相对地址，读取原图时需要继续携带有效 API Key。
 
-外部智能抠图接口仅接受 JPEG、PNG、WebP，单张解码后最大 8MB，尺寸不超过 4096×4096 且总像素不超过 1600 万。接口支持透明、白色或 `#RRGGBB` 自定义底色，PNG/JPG 输出、0–20% 留白及可选 256–4096 方形画布；省略 `edge` 时保留原图宽高。服务端使用 `isnet_quint8` 本地推理，图片不写入数据库；首次调用会下载约 44MB 模型，批量接口最多 5 张并串行推理。
+外部智能抠图接口仅接受 JPEG、PNG、WebP，单张解码后最大 8MB，尺寸不超过 4096×4096 且总像素不超过 1600 万。接口支持透明、白色或 `#RRGGBB` 自定义底色，PNG/JPG 输出、0–20% 留白及可选 256–4096 方形画布；省略 `edge` 时保留原图宽高。服务端使用完整精度 `isnet` 本地推理，图片不写入数据库；模型约 168MiB，默认缓存到 `apps/api/.models/isnet.onnx`，后续进程直接复用，批量接口最多 5 张并串行推理。
 
 外部电子发票接口复用同一套 `EXTERNAL_API_KEYS` 鉴权与统一响应结构。文件通过不带 Data URL 前缀的 Base64 传入，单文件最大 10MB；识别记录按 API Key 哈希后的外部调用方身份隔离保存。批量接口单次最多 10 张、并发 2 张，单项失败不会中断其余项目。
 
@@ -323,6 +323,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `MAX_BATCH_RESOLVE`：单次查询或生成上限，默认 `100`
 - `EXTERNAL_API_KEYS`：外部转换接口密钥，多个密钥以英文逗号分隔；未配置时接口返回 503
 - `IMAGE_CUTOUT_MODEL_BASE_URL`：可选的抠图模型资源根地址；默认使用 IMG.LY 1.7.0 模型资源，可改为企业内网镜像，目录需包含 `resources.json` 和对应分片
+- `IMAGE_CUTOUT_MODEL_PATH`：完整 ISNet ONNX 本地路径；默认 `apps/api/.models/isnet.onnx`，文件缺失时自动下载、校验并原子落盘
 - `IMAGE_CUTOUT_THREADS`：抠图 WASM 推理线程数，范围 1–4，默认 1
 
 前端可通过 `VITE_API_BASE` 指向独立部署的 API；开发模式默认使用 Vite 代理。

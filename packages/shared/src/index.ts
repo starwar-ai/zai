@@ -594,7 +594,7 @@ export interface ExternalImageCutoutResult {
   originalHeight: number
   outputWidth: number
   outputHeight: number
-  engine: "isnet_quint8"
+  engine: "isnet"
   processingMs: number
   clientRequestId?: string
 }

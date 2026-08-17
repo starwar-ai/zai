@@ -1,6 +1,14 @@
 import { fork } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs"
 import type { OcrInvoiceData } from "@zform/shared"
+
+function pdfJsAssetUrl(path: string): string {
+  return fileURLToPath(new URL(path, import.meta.url)).replaceAll("\\", "/")
+}
+
+const pdfJsCMapUrl = pdfJsAssetUrl("../../node_modules/pdfjs-dist/cmaps/")
+const pdfJsStandardFontDataUrl = pdfJsAssetUrl("../../node_modules/pdfjs-dist/standard_fonts/")
 
 export interface InvoiceQrResult {
   rawText: string
@@ -39,7 +47,16 @@ function textItem(value: unknown): value is { str: string; hasEOL?: boolean } {
 
 /** 提取原生 PDF 的文本层；扫描件通常返回 null，由调用方回退到视觉识别。 */
 export async function extractInvoiceTextFromPdf(pdfData: Uint8Array): Promise<string | null> {
-  const loadingTask = getDocument({ data: pdfData, disableFontFace: true, useSystemFonts: false, isEvalSupported: false, stopAtErrors: false })
+  const loadingTask = getDocument({
+    data: pdfData,
+    cMapUrl: pdfJsCMapUrl,
+    cMapPacked: true,
+    standardFontDataUrl: pdfJsStandardFontDataUrl,
+    disableFontFace: true,
+    useSystemFonts: false,
+    isEvalSupported: false,
+    stopAtErrors: false,
+  })
   try {
     const document = await loadingTask.promise
     if (document.numPages < 1 || document.numPages > 100) throw new Error("PDF 页数无效或超过 100 页")

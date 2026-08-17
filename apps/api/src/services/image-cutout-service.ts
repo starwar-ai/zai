@@ -1,14 +1,17 @@
 import { createCanvas, ImageData, loadImage } from "@napi-rs/canvas"
 import type { ExternalImageCutoutBatchItemResult, ExternalImageCutoutBatchRequest, ExternalImageCutoutBatchResult, ExternalImageCutoutRequest, ExternalImageCutoutResult, ImageCutoutMimeType } from "@zform/shared"
 import { createHash } from "node:crypto"
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import * as ort from "onnxruntime-web"
 import { BusinessError } from "../utils/business-error.js"
 
-const modelKey = "/models/isnet_quint8"
+const modelKey = "/models/isnet"
 const modelVersion = "1.7.0"
+const expectedModelSize = 176_149_806
+const expectedModelSha256 = "cc2c9f5c1751b9737cb81e708ff0c5e9542c2205daed22418a4fd2ab5d4c481a"
 const modelResolution = 1024
 const maxInputBytes = 8 * 1024 * 1024
 const maxDimension = 4096
@@ -28,6 +31,44 @@ function modelBaseUrl(): URL {
     return new URL(value.endsWith("/") ? value : `${value}/`)
   } catch {
     throw new BusinessError("IMAGE_CUTOUT_MODEL_BASE_URL 配置无效。", 503)
+  }
+}
+
+function modelFilePath(): string {
+  const configured = process.env.IMAGE_CUTOUT_MODEL_PATH?.trim()
+  return configured ? path.resolve(configured) : fileURLToPath(new URL("../../.models/isnet.onnx", import.meta.url))
+}
+
+function verifyCompleteModel(bytes: Uint8Array): void {
+  if (bytes.byteLength !== expectedModelSize) throw new BusinessError(`本地 ISNet 模型大小无效：应为 ${expectedModelSize} 字节。`, 503)
+  if (createHash("sha256").update(bytes).digest("hex") !== expectedModelSha256) throw new BusinessError("本地 ISNet 模型 SHA-256 校验失败。", 503)
+}
+
+async function readLocalModel(): Promise<Uint8Array | undefined> {
+  const target = modelFilePath()
+  try {
+    const info = await stat(target)
+    if (!info.isFile()) throw new BusinessError("IMAGE_CUTOUT_MODEL_PATH 必须指向 ONNX 文件。", 503)
+    const bytes = await readFile(target)
+    verifyCompleteModel(bytes)
+    return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    throw error
+  }
+}
+
+async function persistModel(bytes: Uint8Array): Promise<void> {
+  const target = modelFilePath()
+  const temporary = `${target}.${process.pid}.${Date.now()}.download`
+  await mkdir(path.dirname(target), { recursive: true })
+  try {
+    await writeFile(temporary, bytes, { flag: "wx" })
+    await rename(temporary, target)
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined)
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return
+    throw new BusinessError("完整 ISNet 模型无法写入本地缓存。", 503)
   }
 }
 
@@ -55,6 +96,8 @@ async function fetchChecked(url: URL): Promise<Response> {
 }
 
 async function loadModel(): Promise<Uint8Array> {
+  const cached = await readLocalModel()
+  if (cached) return cached
   const baseUrl = modelBaseUrl()
   const resources = await (await fetchChecked(new URL("resources.json", baseUrl))).json() as Record<string, unknown>
   const resource = resources[modelKey]
@@ -75,6 +118,8 @@ async function loadModel(): Promise<Uint8Array> {
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, modelResource.chunks.length) }, () => worker()))
+  verifyCompleteModel(model)
+  await persistModel(model)
   return model
 }
 
@@ -200,7 +245,7 @@ async function processImage(request: ExternalImageCutoutRequest, startedAt: numb
   return {
     originalFilename: request.filename, outputFilename: outputFilename(request.filename, outputFormat), mimeType,
     base64Data: outputBuffer.toString("base64"), originalWidth, originalHeight, outputWidth, outputHeight,
-    engine: "isnet_quint8", processingMs: Math.max(1, Math.round(performance.now() - startedAt)),
+    engine: "isnet", processingMs: Math.max(1, Math.round(performance.now() - startedAt)),
     ...(request.clientRequestId ? { clientRequestId: request.clientRequestId } : {}),
   }
 }

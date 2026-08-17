@@ -25,7 +25,7 @@ export const openApiDocument = {
 
 文件内容使用标准 Base64，不要包含 \`data:image/png;base64,\` 等 Data URL 前缀。支付截图、导航截图、电子发票和火车票单文件解码后最大 10MB；以图搜图与智能抠图输入图片最大 8MB。图片支持 JPEG、PNG、WebP，电子发票还支持 PDF；火车票仅支持带可提取文本层的铁路电子客票 PDF，扫描件暂不支持。
 
-智能抠图由服务端本地 ISNet 量化模型处理；首次请求需要下载约 44MB 模型资源，后续请求复用进程内模型会话。以图搜图结果中的 \`imagePath\` 是相对路径，读取结果原图时必须继续携带有效 API Key。`,
+智能抠图由服务端本地完整 ISNet 模型处理。模型默认保存在 \`apps/api/.models/isnet.onnx\`，后续启动直接复用；本地文件缺失时首次请求会下载约 168MiB 模型并在完整校验后原子落盘。以图搜图结果中的 \`imagePath\` 是相对路径，读取结果原图时必须继续携带有效 API Key。`,
   },
   servers: [{ url: "/", description: "当前服务" }],
   tags: [{ name: "报关品名", description: "外部报关品名转换接口" }, { name: "支付截图", description: "外部支付截图识别接口" }, { name: "电子发票", description: "外部电子发票识别接口" }, { name: "火车票", description: "外部铁路电子客票识别接口" }, { name: "导航截图", description: "外部导航路线截图识别接口" }, { name: "以图搜图", description: "基于公共已索引图库的相似图片检索接口" }, { name: "智能抠图", description: "服务端本地模型背景移除与规格化输出接口" }],
@@ -149,7 +149,7 @@ export const openApiDocument = {
       post: {
         tags: ["智能抠图"], summary: "移除单张图片背景", description: "同步移除一张图片背景，并按指定底色、方形画布、留白和格式输出 Base64 图片。edge 省略时保留原始画布尺寸；JPG 不支持透明通道，backgroundMode=transparent 时自动使用白底。图片不会写入数据库。", operationId: "removeExternalImageBackground", security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalImageCutoutRequest" }, example: { filename: "product.webp", mimeType: "image/webp", base64Data: "UklGRiQAAABXRUJQVlA4...", backgroundMode: "transparent", outputFormat: "png", edge: 1600, padding: 0.08, clientRequestId: "PIM-CUTOUT-001" } } } },
-        responses: { "200": { description: "抠图及规格化输出完成", content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalImageCutoutResponse" }, example: { success: true, message: "图片抠图完成", data: { originalFilename: "product.webp", outputFilename: "product_cutout.png", mimeType: "image/png", base64Data: "iVBORw0KGgo...", originalWidth: 1200, originalHeight: 900, outputWidth: 1600, outputHeight: 1600, engine: "isnet_quint8", processingMs: 2380, clientRequestId: "PIM-CUTOUT-001" } } } } }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "413": { $ref: "#/components/responses/CutoutPayloadTooLarge" }, "422": { $ref: "#/components/responses/Unprocessable" }, "503": { $ref: "#/components/responses/Unavailable" } },
+        responses: { "200": { description: "抠图及规格化输出完成", content: { "application/json": { schema: { $ref: "#/components/schemas/ExternalImageCutoutResponse" }, example: { success: true, message: "图片抠图完成", data: { originalFilename: "product.webp", outputFilename: "product_cutout.png", mimeType: "image/png", base64Data: "iVBORw0KGgo...", originalWidth: 1200, originalHeight: 900, outputWidth: 1600, outputHeight: 1600, engine: "isnet", processingMs: 2380, clientRequestId: "PIM-CUTOUT-001" } } } } }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "413": { $ref: "#/components/responses/CutoutPayloadTooLarge" }, "422": { $ref: "#/components/responses/Unprocessable" }, "503": { $ref: "#/components/responses/Unavailable" } },
       },
     },
     "/api/external/image-cutout/remove-background/batch": {
@@ -319,7 +319,7 @@ export const openApiDocument = {
           originalFilename: { type: "string" }, outputFilename: { type: "string" }, mimeType: { type: "string", enum: ["image/png", "image/jpeg"] },
           base64Data: { type: "string", description: "抠图成品的标准 Base64 内容，不含 Data URL 前缀" },
           originalWidth: { type: "integer", minimum: 1 }, originalHeight: { type: "integer", minimum: 1 }, outputWidth: { type: "integer", minimum: 1 }, outputHeight: { type: "integer", minimum: 1 },
-          engine: { type: "string", enum: ["isnet_quint8"] }, processingMs: { type: "integer", minimum: 1, description: "包含排队、首次模型加载和推理导出的总耗时" }, clientRequestId: { type: "string" },
+          engine: { type: "string", enum: ["isnet"], description: "完整精度 ISNet 模型" }, processingMs: { type: "integer", minimum: 1, description: "包含排队、本地模型加载和推理导出的总耗时" }, clientRequestId: { type: "string" },
         },
       },
       ExternalImageCutoutBatchRequest: { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array", minItems: 1, maxItems: 5, items: { $ref: "#/components/schemas/ExternalImageCutoutRequest" } } } },
