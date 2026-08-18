@@ -6,7 +6,7 @@ import { ok } from "../utils/http.js"
 const cutoutItemSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-  base64Data: z.string().min(4).max(11_200_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "base64Data 必须是不带 Data URL 前缀的标准 Base64"),
+  base64Data: z.string().min(4).max(14_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "base64Data 必须是不带 Data URL 前缀的标准 Base64"),
   backgroundMode: z.enum(["transparent", "white", "color"]).default("transparent"),
   backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "backgroundColor 必须是 #RRGGBB").optional(),
   outputFormat: z.enum(["png", "jpg"]).default("png"),

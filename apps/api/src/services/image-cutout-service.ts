@@ -13,11 +13,21 @@ const modelVersion = "1.7.0"
 const expectedModelSize = 176_149_806
 const expectedModelSha256 = "cc2c9f5c1751b9737cb81e708ff0c5e9542c2205daed22418a4fd2ab5d4c481a"
 const modelResolution = 1024
-const maxInputBytes = 8 * 1024 * 1024
-const maxDimension = 4096
-const maxPixels = 16_000_000
+const maxInputBytes = 10 * 1024 * 1024
+const defaultMaxDimension = 8192
+const defaultMaxPixels = 32_000_000
 const maxBatchSize = 5
 const defaultModelBaseUrl = `https://staticimgly.com/@imgly/background-removal-data/${modelVersion}/dist/`
+
+function positiveIntegerEnv(name: string, fallback: number): number {
+  const value = process.env[name]?.trim()
+  if (!value) return fallback
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const maxDimension = positiveIntegerEnv("IMAGE_CUTOUT_MAX_DIMENSION", defaultMaxDimension)
+const maxPixels = positiveIntegerEnv("IMAGE_CUTOUT_MAX_PIXELS", defaultMaxPixels)
 
 interface ModelChunk { name: string; hash: string; offsets: [number, number] }
 interface ModelResource { chunks: ModelChunk[]; size: number }
@@ -160,7 +170,7 @@ function matchesMimeType(buffer: Buffer, mimeType: ImageCutoutMimeType): boolean
 function decodeInput(request: ExternalImageCutoutRequest): Buffer {
   const buffer = Buffer.from(request.base64Data, "base64")
   if (!buffer.length) throw new BusinessError("图片内容不能为空。")
-  if (buffer.length > maxInputBytes) throw new BusinessError("单张图片不能超过 8MB。", 413)
+  if (buffer.length > maxInputBytes) throw new BusinessError("单张图片不能超过 10MB。", 413)
   if (!matchesMimeType(buffer, request.mimeType)) throw new BusinessError("mimeType 与实际图片格式不一致。")
   return buffer
 }
@@ -188,7 +198,7 @@ async function processImage(request: ExternalImageCutoutRequest, startedAt: numb
   const originalWidth = image.width
   const originalHeight = image.height
   if (!originalWidth || !originalHeight || originalWidth > maxDimension || originalHeight > maxDimension || originalWidth * originalHeight > maxPixels) {
-    throw new BusinessError("图片尺寸不能超过 4096×4096，且总像素不能超过 1600 万。", 413)
+    throw new BusinessError(`图片尺寸不能超过 ${maxDimension}×${maxDimension}，且总像素不能超过 ${maxPixels}。`, 413)
   }
 
   const inferenceCanvas = createCanvas(modelResolution, modelResolution)
@@ -213,18 +223,13 @@ async function processImage(request: ExternalImageCutoutRequest, startedAt: numb
   }
   const maskCanvas = createCanvas(modelResolution, modelResolution)
   maskCanvas.getContext("2d").putImageData(new ImageData(maskBytes, modelResolution, modelResolution), 0, 0)
-  const resizedMaskCanvas = createCanvas(originalWidth, originalHeight)
-  const resizedMaskContext = resizedMaskCanvas.getContext("2d")
-  resizedMaskContext.drawImage(maskCanvas, 0, 0, originalWidth, originalHeight)
-  const mask = resizedMaskContext.getImageData(0, 0, originalWidth, originalHeight).data
 
   const foregroundCanvas = createCanvas(originalWidth, originalHeight)
   const foregroundContext = foregroundCanvas.getContext("2d")
   foregroundContext.drawImage(image, 0, 0)
-  const foreground = foregroundContext.getImageData(0, 0, originalWidth, originalHeight)
-  for (let index = 3; index < foreground.data.length; index += 4) foreground.data[index] = Math.round(foreground.data[index]! * mask[index]! / 255)
-  foregroundContext.clearRect(0, 0, originalWidth, originalHeight)
-  foregroundContext.putImageData(foreground, 0, 0)
+  foregroundContext.globalCompositeOperation = "destination-in"
+  foregroundContext.drawImage(maskCanvas, 0, 0, originalWidth, originalHeight)
+  foregroundContext.globalCompositeOperation = "source-over"
 
   const outputFormat = request.outputFormat || "png"
   const outputWidth = request.edge || originalWidth

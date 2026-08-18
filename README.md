@@ -199,7 +199,7 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 
 外部以图搜图接口仅接受 JPEG、PNG、WebP，查询图片解码后最大 8MB，`topK` 范围为 1–50。查询原图和结果快照按 API Key 哈希身份隔离保存；结果中的 `imagePath` 为相对地址，读取原图时需要继续携带有效 API Key。
 
-外部智能抠图接口仅接受 JPEG、PNG、WebP，单张解码后最大 8MB，尺寸不超过 4096×4096 且总像素不超过 1600 万。接口支持透明、白色或 `#RRGGBB` 自定义底色，PNG/JPG 输出、0–20% 留白及可选 256–4096 方形画布；省略 `edge` 时保留原图宽高。服务端使用完整精度 `isnet` 本地推理，图片不写入数据库；模型约 168MiB，默认缓存到 `apps/api/.models/isnet.onnx`，后续进程直接复用，批量接口最多 5 张并串行推理。
+外部智能抠图接口仅接受 JPEG、PNG、WebP，单张解码后最大 10MB，默认尺寸不超过 8192×8192 且总像素不超过 3200 万；可通过 `IMAGE_CUTOUT_MAX_DIMENSION` 和 `IMAGE_CUTOUT_MAX_PIXELS` 调整。接口支持透明、白色或 `#RRGGBB` 自定义底色，PNG/JPG 输出、0–20% 留白及可选 256–4096 方形画布；省略 `edge` 时保留原图宽高。服务端使用完整精度 `isnet` 本地推理，图片不写入数据库；模型约 168MiB，默认缓存到 `apps/api/.models/isnet.onnx`，后续进程直接复用，批量接口最多 5 张并串行推理。
 
 外部电子发票接口复用同一套 `EXTERNAL_API_KEYS` 鉴权与统一响应结构。文件通过不带 Data URL 前缀的 Base64 传入，单文件最大 10MB；识别记录按 API Key 哈希后的外部调用方身份隔离保存。批量接口单次最多 10 张、并发 2 张，单项失败不会中断其余项目。
 

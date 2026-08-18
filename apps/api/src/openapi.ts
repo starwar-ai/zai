@@ -23,7 +23,7 @@ export const openApiDocument = {
 
 ## 图片、电子发票与火车票文件
 
-文件内容使用标准 Base64，不要包含 \`data:image/png;base64,\` 等 Data URL 前缀。支付截图、导航截图、电子发票和火车票单文件解码后最大 10MB；以图搜图与智能抠图输入图片最大 8MB。图片支持 JPEG、PNG、WebP，电子发票还支持 PDF；火车票仅支持带可提取文本层的铁路电子客票 PDF，扫描件暂不支持。
+文件内容使用标准 Base64，不要包含 \`data:image/png;base64,\` 等 Data URL 前缀。支付截图、导航截图、电子发票、火车票和智能抠图单文件解码后最大 10MB；以图搜图输入图片最大 8MB。图片支持 JPEG、PNG、WebP，电子发票还支持 PDF；火车票仅支持带可提取文本层的铁路电子客票 PDF，扫描件暂不支持。
 
 智能抠图由服务端本地完整 ISNet 模型处理。模型默认保存在 \`apps/api/.models/isnet.onnx\`，后续启动直接复用；本地文件缺失时首次请求会下载约 168MiB 模型并在完整校验后原子落盘。以图搜图结果中的 \`imagePath\` 是相对路径，读取结果原图时必须继续携带有效 API Key。`,
   },
@@ -304,7 +304,7 @@ export const openApiDocument = {
         properties: {
           filename: { type: "string", minLength: 1, maxLength: 255, description: "包含扩展名的原图片文件名" },
           mimeType: { type: "string", enum: ["image/jpeg", "image/png", "image/webp"], description: "必须与图片魔数对应" },
-          base64Data: { type: "string", minLength: 4, maxLength: 11200000, pattern: "^[A-Za-z0-9+/]+={0,2}$", description: "标准 Base64 图片内容，不含 Data URL 前缀；解码后最大 8MB" },
+          base64Data: { type: "string", minLength: 4, maxLength: 14000000, pattern: "^[A-Za-z0-9+/]+={0,2}$", description: "标准 Base64 图片内容，不含 Data URL 前缀；解码后最大 10MB" },
           backgroundMode: { type: "string", enum: ["transparent", "white", "color"], default: "transparent", description: "透明、纯白或自定义底色；JPG 输出时 transparent 按白底处理" },
           backgroundColor: { type: "string", pattern: "^#[0-9a-fA-F]{6}$", example: "#F4F0E9", description: "backgroundMode=color 时必填" },
           outputFormat: { type: "string", enum: ["png", "jpg"], default: "png" },
@@ -362,7 +362,7 @@ export const openApiDocument = {
       Unauthorized: { description: "API Key 缺失或无效", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
       PayloadTooLarge: { description: "Base64 解码后的单文件超过 10MB", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" }, example: { success: false, message: "单个文件不能超过 10MB。", data: null } } } },
       ImagePayloadTooLarge: { description: "Base64 解码后的查询图片超过 8MB", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" }, example: { success: false, message: "单张图片不能超过 8MB。", data: null } } } },
-      CutoutPayloadTooLarge: { description: "抠图输入超过 8MB，或图片尺寸超过 4096×4096 / 1600 万像素", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" }, example: { success: false, message: "单张图片不能超过 8MB。", data: null } } } },
+      CutoutPayloadTooLarge: { description: "抠图输入超过 10MB，或图片尺寸超过默认的 8192×8192 / 3200 万像素（服务端可通过环境变量调整）", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" }, example: { success: false, message: "单张图片不能超过 10MB。", data: null } } } },
       Unprocessable: { description: "文件已接收但识别失败", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
       NotFound: { description: "指定资源不存在", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
       Unavailable: { description: "外部接口或模型服务尚未正确配置", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
