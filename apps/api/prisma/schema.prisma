@@ -172,6 +172,7 @@ model OcrRecognition {
   confidence       Decimal? @db.Decimal(5, 4)
   selectedRouteEvidence String? @map("selected_route_evidence") @db.VarChar(1000)
   invoiceType      String?  @map("invoice_type") @db.VarChar(20)
+  invoiceCategory  String?  @map("invoice_category") @db.VarChar(20)
   invoiceNumber    String?  @map("invoice_number") @db.VarChar(100)
   invoiceDate      String?  @map("invoice_date") @db.VarChar(100)
   buyerName        String?  @map("buyer_name") @db.VarChar(255)
@@ -184,6 +185,10 @@ model OcrRecognition {
   totalAmountInWords String? @map("total_amount_in_words") @db.VarChar(100)
   remarks          String?  @db.VarChar(1000)
   drawer           String?  @db.VarChar(100)
+  vehiclePlate     String?  @map("vehicle_plate") @db.VarChar(50)
+  vehicleType      String?  @map("vehicle_type") @db.VarChar(50)
+  tollAmount       String?  @map("toll_amount") @db.VarChar(100)
+  tollDate         String?  @map("toll_date") @db.VarChar(100)
   invoiceItems     Json     @default("[]") @map("invoice_items") @db.JsonB
   trainInvoiceNo   String?  @map("train_invoice_no") @db.VarChar(100)
   trainIssueDate   String?  @map("train_issue_date") @db.VarChar(100)

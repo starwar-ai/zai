@@ -1,9 +1,9 @@
 import { Prisma, type OcrRecognition } from "@prisma/client"
-import type { ExternalInvoiceBatchItemResult, ExternalInvoiceBatchRecognizeRequest, ExternalInvoiceBatchRecognizeResult, ExternalInvoiceRecognizeRequest, ExternalInvoiceRecognizeResult, ExternalNavigationRouteBatchItemResult, ExternalNavigationRouteBatchRecognizeRequest, ExternalNavigationRouteBatchRecognizeResult, ExternalNavigationRouteRecognizeRequest, ExternalNavigationRouteRecognizeResult, ExternalPaymentBatchItemResult, ExternalPaymentBatchRecognizeRequest, ExternalPaymentBatchRecognizeResult, ExternalPaymentRecognizeRequest, ExternalPaymentRecognizeResult, ExternalTrainTicketBatchItemResult, ExternalTrainTicketBatchRecognizeRequest, ExternalTrainTicketBatchRecognizeResult, ExternalTrainTicketRecognizeRequest, ExternalTrainTicketRecognizeResult, ListResponse, OcrExportRequest, OcrExportResult, OcrInvoiceItem, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognitionType, OcrRecognizeRequest, OcrRecognizeResult, OcrRouteData } from "@zform/shared"
+import type { ExternalInvoiceBatchItemResult, ExternalInvoiceBatchRecognizeRequest, ExternalInvoiceBatchRecognizeResult, ExternalInvoiceRecognizeRequest, ExternalInvoiceRecognizeResult, ExternalNavigationRouteBatchItemResult, ExternalNavigationRouteBatchRecognizeRequest, ExternalNavigationRouteBatchRecognizeResult, ExternalNavigationRouteRecognizeRequest, ExternalNavigationRouteRecognizeResult, ExternalPaymentBatchItemResult, ExternalPaymentBatchRecognizeRequest, ExternalPaymentBatchRecognizeResult, ExternalPaymentRecognizeRequest, ExternalPaymentRecognizeResult, ExternalTrainTicketBatchItemResult, ExternalTrainTicketBatchRecognizeRequest, ExternalTrainTicketBatchRecognizeResult, ExternalTrainTicketRecognizeRequest, ExternalTrainTicketRecognizeResult, ListResponse, OcrExportRequest, OcrExportResult, OcrInvoiceItem, OcrModelInfo, OcrRecognitionQuery, OcrRecognitionRecord, OcrRecognitionType, OcrRecognizeRequest, OcrRecognizeResult, OcrRouteData } from "@zform/shared"
 import { prisma } from "../database.js"
 import { BusinessError } from "../utils/business-error.js"
 import { createXlsx } from "../utils/xlsx.js"
-import { recognizeInvoice } from "./ocr-provider.js"
+import { invoiceModelInfo, recognizeInvoice } from "./ocr-provider.js"
 import { recognizePaymentScreenshot } from "./payment-ocr-provider.js"
 import { recognizeNavigationRoute } from "./route-ocr-provider.js"
 import { extractInvoicePdf, qrInvoiceData, type InvoiceQrResult } from "./invoice-qr-service.js"
@@ -21,12 +21,15 @@ function toRecord(row: OcrRecognition): OcrRecognitionRecord {
     id: row.id, recognitionType: row.recognitionType === "INVOICE" ? "INVOICE" : row.recognitionType === "NAVIGATION_ROUTE" ? "NAVIGATION_ROUTE" : row.recognitionType === "TRAIN_TICKET" ? "TRAIN_TICKET" : "PAYMENT", ...(row.extractionMethod === "QR" || row.extractionMethod === "AI" || row.extractionMethod === "HYBRID" || row.extractionMethod === "PDF_TEXT" || row.extractionMethod === "PDF_TEXT_AI" ? { extractionMethod: row.extractionMethod } : {}), originalFilename: row.originalFilename, mimeType: row.mimeType,
     status: row.status === "SUCCESS" ? "SUCCESS" : row.status === "FAILED" ? "FAILED" : "RECOGNIZING",
     ...(row.invoiceType === "VAT_NORMAL" || row.invoiceType === "VAT_SPECIAL" ? { invoiceType: row.invoiceType } : {}),
+    ...(row.invoiceCategory === "STANDARD" || row.invoiceCategory === "TOLL" ? { invoiceCategory: row.invoiceCategory } : {}),
     ...(row.invoiceNumber ? { invoiceNumber: row.invoiceNumber } : {}), ...(row.invoiceDate ? { invoiceDate: row.invoiceDate } : {}),
     ...(row.buyerName ? { buyerName: row.buyerName } : {}), ...(row.buyerTaxId ? { buyerTaxId: row.buyerTaxId } : {}),
     ...(row.sellerName ? { sellerName: row.sellerName } : {}), ...(row.sellerTaxId ? { sellerTaxId: row.sellerTaxId } : {}),
     ...(row.subtotal ? { subtotal: row.subtotal } : {}), ...(row.totalTax ? { totalTax: row.totalTax } : {}),
     ...(row.totalAmount ? { totalAmount: row.totalAmount } : {}), ...(row.totalAmountInWords ? { totalAmountInWords: row.totalAmountInWords } : {}),
-    ...(row.remarks ? { remarks: row.remarks } : {}), ...(row.drawer ? { drawer: row.drawer } : {}), items: invoiceItems(row.invoiceItems), waypoints: routeWaypoints(row.waypoints),
+    ...(row.remarks ? { remarks: row.remarks } : {}), ...(row.drawer ? { drawer: row.drawer } : {}),
+    ...(row.vehiclePlate ? { vehiclePlate: row.vehiclePlate } : {}), ...(row.vehicleType ? { vehicleType: row.vehicleType } : {}), ...(row.tollAmount ? { tollAmount: row.tollAmount } : {}), ...(row.tollDate ? { tollDate: row.tollDate } : {}),
+    items: invoiceItems(row.invoiceItems), waypoints: routeWaypoints(row.waypoints),
     ...(row.platform ? { platform: row.platform } : {}), ...(row.orderNo ? { orderNo: row.orderNo } : {}), ...(row.productName ? { productName: row.productName } : {}),
     ...(row.amount ? { amount: row.amount } : {}), ...(row.paymentTime ? { paymentTime: row.paymentTime } : {}), ...(row.paymentStatus ? { paymentStatus: row.paymentStatus } : {}), ...(row.paymentMethod ? { paymentMethod: row.paymentMethod } : {}), ...(row.receiver ? { receiver: row.receiver } : {}),
     ...(row.routeResultStatus === "success" || row.routeResultStatus === "uncertain" || row.routeResultStatus === "not_found" ? { routeResultStatus: row.routeResultStatus } : {}),
@@ -46,6 +49,8 @@ function dateWhere(input: { startDate?: string; endDate?: string }): Prisma.Date
   if (input.endDate) value.lte = new Date(`${input.endDate}T23:59:59.999Z`)
   return Object.keys(value).length ? value : undefined
 }
+
+export function getInvoiceOcrModelInfo(): OcrModelInfo { return invoiceModelInfo() }
 
 export async function recognizeOcr(userId: string, input: OcrRecognizeRequest): Promise<OcrRecognizeResult> {
   const fileData = Buffer.from(input.base64Data, "base64")
@@ -98,6 +103,7 @@ export async function recognizeExternalInvoice(actor: string, input: ExternalInv
   return {
     recognitionId: result.record.id, originalFilename: result.record.originalFilename,
     ...(result.record.invoiceType ? { invoiceType: result.record.invoiceType } : {}),
+    ...(result.record.invoiceCategory ? { invoiceCategory: result.record.invoiceCategory } : {}),
     ...(result.record.extractionMethod ? { extractionMethod: result.record.extractionMethod } : {}),
     ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
     ...(result.record.invoiceNumber ? { invoiceNumber: result.record.invoiceNumber } : {}), ...(result.record.invoiceDate ? { invoiceDate: result.record.invoiceDate } : {}),
@@ -105,7 +111,9 @@ export async function recognizeExternalInvoice(actor: string, input: ExternalInv
     ...(result.record.sellerName ? { sellerName: result.record.sellerName } : {}), ...(result.record.sellerTaxId ? { sellerTaxId: result.record.sellerTaxId } : {}),
     ...(result.record.subtotal ? { subtotal: result.record.subtotal } : {}), ...(result.record.totalTax ? { totalTax: result.record.totalTax } : {}),
     ...(result.record.totalAmount ? { totalAmount: result.record.totalAmount } : {}), ...(result.record.totalAmountInWords ? { totalAmountInWords: result.record.totalAmountInWords } : {}),
-    ...(result.record.remarks ? { remarks: result.record.remarks } : {}), ...(result.record.drawer ? { drawer: result.record.drawer } : {}), items: result.record.items,
+    ...(result.record.remarks ? { remarks: result.record.remarks } : {}), ...(result.record.drawer ? { drawer: result.record.drawer } : {}),
+    ...(result.record.vehiclePlate ? { vehiclePlate: result.record.vehiclePlate } : {}), ...(result.record.vehicleType ? { vehicleType: result.record.vehicleType } : {}),
+    ...(result.record.tollAmount ? { tollAmount: result.record.tollAmount } : {}), ...(result.record.tollDate ? { tollDate: result.record.tollDate } : {}), items: result.record.items,
   }
 }
 
@@ -183,10 +191,11 @@ export async function recognizeExternalNavigationRoutesBatch(actor: string, inpu
 
 export async function queryOcrRecognitions(userId: string, input: OcrRecognitionQuery): Promise<ListResponse<OcrRecognitionRecord>> {
   const page = input.page || 1; const pageSize = input.pageSize || 20; const keyword = input.keyword?.trim(); const createdAt = dateWhere(input)
-  const fields = input.recognitionType === "INVOICE" ? ["invoiceType", "invoiceNumber", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "totalAmount", "originalFilename"] : input.recognitionType === "NAVIGATION_ROUTE" ? ["destination", "selectedRouteEvidence", "originalFilename"] : input.recognitionType === "TRAIN_TICKET" ? ["trainInvoiceNo", "departureStation", "arrivalStation", "trainNo", "passengerName", "ticketNo", "trainBuyerName", "originalFilename"] : ["platform", "orderNo", "productName", "amount", "receiver", "originalFilename"]
+  const fields = input.recognitionType === "INVOICE" ? ["invoiceType", "invoiceCategory", "invoiceNumber", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "vehiclePlate", "vehicleType", "tollAmount", "tollDate", "totalAmount", "originalFilename"] : input.recognitionType === "NAVIGATION_ROUTE" ? ["destination", "selectedRouteEvidence", "originalFilename"] : input.recognitionType === "TRAIN_TICKET" ? ["trainInvoiceNo", "departureStation", "arrivalStation", "trainNo", "passengerName", "ticketNo", "trainBuyerName", "originalFilename"] : ["platform", "orderNo", "productName", "amount", "receiver", "originalFilename"]
   const keywordFilters: Prisma.OcrRecognitionWhereInput[] = keyword ? fields.map((field) => ({ [field]: { contains: keyword, mode: "insensitive" } })) : []
   if (input.recognitionType === "INVOICE" && keyword?.includes("专用")) keywordFilters.push({ invoiceType: "VAT_SPECIAL" })
   if (input.recognitionType === "INVOICE" && keyword?.includes("普通")) keywordFilters.push({ invoiceType: "VAT_NORMAL" })
+  if (input.recognitionType === "INVOICE" && keyword?.includes("通行费")) keywordFilters.push({ invoiceCategory: "TOLL" })
   const where: Prisma.OcrRecognitionWhereInput = { userId, recognitionType: input.recognitionType, ...(createdAt ? { createdAt } : {}), ...(keywordFilters.length ? { OR: keywordFilters } : {}) }
   const [items, total] = await Promise.all([prisma.ocrRecognition.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }), prisma.ocrRecognition.count({ where })])
   return { items: items.map(toRecord), total, page, pageSize, pageCount: Math.max(1, Math.ceil(total / pageSize)) }
@@ -205,15 +214,15 @@ export async function exportOcrRecognitions(userId: string, input: OcrExportRequ
     const items = invoiceItems(row.invoiceItems)
     const exportItems: Array<OcrInvoiceItem | undefined> = items.length ? items : [undefined]
     return exportItems.map((item, itemIndex) => [
-      recordIndex + 1, itemIndex + 1, row.invoiceType === "VAT_SPECIAL" ? "增值税专用发票" : row.invoiceType === "VAT_NORMAL" ? "普通发票" : undefined, row.invoiceNumber, row.invoiceDate,
+      recordIndex + 1, itemIndex + 1, row.invoiceCategory === "TOLL" ? "通行费电子发票" : row.invoiceType === "VAT_SPECIAL" ? "增值税专用发票" : row.invoiceType === "VAT_NORMAL" ? "普通发票" : undefined, row.invoiceNumber, row.invoiceDate,
       row.buyerName, row.buyerTaxId, row.sellerName, row.sellerTaxId,
       item?.itemName, item?.specification, item?.unit, item?.quantity,
       item?.unitPrice, item?.amount, item?.taxRate, item?.taxAmount,
       row.subtotal, row.totalTax, row.totalAmount, row.totalAmountInWords,
-      row.drawer, row.remarks, row.originalFilename, row.createdAt.toLocaleString("zh-CN"),
+      row.drawer, row.remarks, row.vehiclePlate, row.vehicleType, row.tollAmount, row.tollDate, row.originalFilename, row.createdAt.toLocaleString("zh-CN"),
     ])
   })
-  const rows: unknown[][] = invoice ? [["发票序号", "明细序号", "发票类型", "发票号码", "开票日期", "购买方", "购买方税号", "销售方", "销售方税号", "商品名称", "规格型号", "单位", "数量", "单价", "明细金额", "税率", "明细税额", "金额合计", "税额合计", "价税合计", "价税合计（大写）", "开票人", "备注", "文件名", "识别时间"], ...invoiceRows] : navigationRoute ? [["序号", "识别结论", "目的地", "途经地", "距离（公里）", "通行费（元）", "置信度", "选中路线依据", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.routeResultStatus, row.destination, routeWaypoints(row.waypoints).join(" → "), row.distanceKm, row.tollYuan, row.confidence, row.selectedRouteEvidence, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])] : trainTicket ? [["序号", "发票号码", "开票日期", "出发站", "到达站", "车次", "出发日期", "出发时间", "车厢座位", "席别", "票价", "乘客姓名", "身份证号", "电子客票号", "购买方名称", "统一社会信用代码", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.trainInvoiceNo, row.trainIssueDate, row.departureStation, row.arrivalStation, row.trainNo, row.departureDate, row.departureTime, row.seatNo, row.seatClass, row.ticketPrice, row.passengerName, row.passengerId, row.ticketNo, row.trainBuyerName, row.trainBuyerCreditCode, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])] : [["序号", "平台", "订单号", "商品名称", "支付金额", "支付时间", "支付状态", "支付方式", "收款方", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.platform, row.orderNo, row.productName, row.amount, row.paymentTime, row.paymentStatus, row.paymentMethod, row.receiver, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])]
+  const rows: unknown[][] = invoice ? [["发票序号", "明细序号", "发票类型", "发票号码", "开票日期", "购买方", "购买方税号", "销售方", "销售方税号", "商品名称", "规格型号", "单位", "数量", "单价", "明细金额", "税率", "明细税额", "金额合计", "税额合计", "价税合计", "价税合计（大写）", "开票人", "备注", "车牌", "车辆类型", "通行费", "通行日期", "文件名", "识别时间"], ...invoiceRows] : navigationRoute ? [["序号", "识别结论", "目的地", "途经地", "距离（公里）", "通行费（元）", "置信度", "选中路线依据", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.routeResultStatus, row.destination, routeWaypoints(row.waypoints).join(" → "), row.distanceKm, row.tollYuan, row.confidence, row.selectedRouteEvidence, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])] : trainTicket ? [["序号", "发票号码", "开票日期", "出发站", "到达站", "车次", "出发日期", "出发时间", "车厢座位", "席别", "票价", "乘客姓名", "身份证号", "电子客票号", "购买方名称", "统一社会信用代码", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.trainInvoiceNo, row.trainIssueDate, row.departureStation, row.arrivalStation, row.trainNo, row.departureDate, row.departureTime, row.seatNo, row.seatClass, row.ticketPrice, row.passengerName, row.passengerId, row.ticketNo, row.trainBuyerName, row.trainBuyerCreditCode, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])] : [["序号", "平台", "订单号", "商品名称", "支付金额", "支付时间", "支付状态", "支付方式", "收款方", "文件名", "识别时间"], ...records.map((row, index) => [index + 1, row.platform, row.orderNo, row.productName, row.amount, row.paymentTime, row.paymentStatus, row.paymentMethod, row.receiver, row.originalFilename, row.createdAt.toLocaleString("zh-CN")])]
   const label = invoice ? "电子发票识别" : navigationRoute ? "导航截图识别" : trainTicket ? "火车票识别" : "支付截图识别"; const buffer = createXlsx(label, rows)
   return { base64: buffer.toString("base64"), filename: `${label}_${new Date().toISOString().slice(0, 10)}.xlsx`, count: records.length }
 }

@@ -58,13 +58,22 @@ async function providerRequest(provider: LlmProviderConfig, input: Record<string
   const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(numberFromEnv("LLM_TIMEOUT_MS", 60000)) })
   const text = await response.text()
   if (!response.ok) throw new Error(`模型服务返回 ${response.status}: ${text.slice(0, 300)}`)
-  const payload = JSON.parse(text) as unknown
-  const output = provider.mode === "responses"
-    ? responseOutput(payload)
-    : provider.mode === "chat-json-schema"
-      ? z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })) }).parse(payload).choices[0]?.message.content || ""
-      : z.object({ content: z.array(z.object({ text: z.string().optional() })) }).parse(payload).content.find((item) => item.text)?.text || ""
-  const generated = generatedSchema.parse(extractJson(output))
+  let output = ""
+  let generated: z.infer<typeof generatedSchema>
+  try {
+    const payload = JSON.parse(text) as unknown
+    output = provider.mode === "responses"
+      ? responseOutput(payload)
+      : provider.mode === "chat-json-schema"
+        ? z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })) }).parse(payload).choices[0]?.message.content || ""
+        : z.object({ content: z.array(z.object({ text: z.string().optional() })) }).parse(payload).content.find((item) => item.text)?.text || ""
+    generated = generatedSchema.parse(extractJson(output))
+  } catch (reason) {
+    const parseDetail = reason instanceof z.ZodError
+      ? reason.issues.map((issue) => `${issue.path.join(".") || "返回值"}：${issue.message}`).join("；")
+      : reason instanceof Error ? reason.message : String(reason)
+    throw new Error(`大模型返回数据无效：${parseDetail}\n\n模型原始返回：\n${output || text || "（空）"}`)
+  }
   return { ...generated, customsDeclarationNameEng: generated.customsDeclarationNameEng.toUpperCase(), provider: provider.provider, model: provider.model }
 }
 

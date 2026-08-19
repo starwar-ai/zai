@@ -1,6 +1,6 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
-import { exportOcrRecognitions, getOcrImage, getOcrRecognition, queryOcrRecognitions, recognizeExternalInvoice, recognizeExternalInvoicesBatch, recognizeExternalNavigationRoute, recognizeExternalNavigationRoutesBatch, recognizeExternalPayment, recognizeExternalPaymentsBatch, recognizeExternalTrainTicket, recognizeExternalTrainTicketsBatch, recognizeOcr, removeOcrRecognition } from "../services/ocr-service.js"
+import { exportOcrRecognitions, getInvoiceOcrModelInfo, getOcrImage, getOcrRecognition, queryOcrRecognitions, recognizeExternalInvoice, recognizeExternalInvoicesBatch, recognizeExternalNavigationRoute, recognizeExternalNavigationRoutesBatch, recognizeExternalPayment, recognizeExternalPaymentsBatch, recognizeExternalTrainTicket, recognizeExternalTrainTicketsBatch, recognizeOcr, removeOcrRecognition } from "../services/ocr-service.js"
 import { ok, routeParam } from "../utils/http.js"
 import { requestUser } from "../utils/request-context.js"
 
@@ -25,6 +25,7 @@ export async function postExternalTrainTicketRecognition(request: Request, respo
 export async function postExternalTrainTicketBatchRecognition(request: Request, response: Response): Promise<void> { const body = z.object({ items: z.array(externalTrainTicketSchema).min(1).max(10) }).strict().parse(request.body); ok(response, await recognizeExternalTrainTicketsBatch(externalActor(response), body), "批量火车票识别完成") }
 
 export async function postOcrRecognition(request: Request, response: Response): Promise<void> { const input = recognizeSchema.parse(request.body); ok(response, await recognizeOcr(requestUser(request).userId, input), input.recognitionType === "INVOICE" ? "发票识别完成" : input.recognitionType === "NAVIGATION_ROUTE" ? "导航截图识别完成" : input.recognitionType === "TRAIN_TICKET" ? "火车票识别完成" : "支付截图识别完成") }
+export async function getInvoiceOcrModel(_request: Request, response: Response): Promise<void> { ok(response, getInvoiceOcrModelInfo()) }
 export async function getOcrRecognitions(request: Request, response: Response): Promise<void> { ok(response, await queryOcrRecognitions(requestUser(request).userId, querySchema.parse(request.query))) }
 export async function getOcrRecognitionController(request: Request, response: Response): Promise<void> { ok(response, await getOcrRecognition(requestUser(request).userId, recognitionTypeSchema.parse(request.query.recognitionType), z.string().uuid().parse(routeParam(request.params.id)))) }
 export async function getOcrRecognitionImage(request: Request, response: Response): Promise<void> { const image = await getOcrImage(requestUser(request).userId, recognitionTypeSchema.parse(request.query.recognitionType), z.string().uuid().parse(routeParam(request.params.id))); response.type(image.mimeType).send(Buffer.from(image.data)) }

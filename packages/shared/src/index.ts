@@ -382,12 +382,14 @@ export type OcrRouteResultStatus = "success" | "uncertain" | "not_found"
 export interface OcrRouteData { routeResultStatus?: OcrRouteResultStatus; distanceKm?: number; tollYuan?: number; destination?: string; waypoints: string[]; confidence?: number; selectedRouteEvidence?: string }
 export interface OcrInvoiceItem { itemName?: string; specification?: string; unit?: string; quantity?: string; unitPrice?: string; amount?: string; taxRate?: string; taxAmount?: string }
 export type OcrInvoiceType = "VAT_NORMAL" | "VAT_SPECIAL"
-export interface OcrInvoiceData { invoiceType?: OcrInvoiceType; invoiceNumber?: string; invoiceDate?: string; buyerName?: string; buyerTaxId?: string; sellerName?: string; sellerTaxId?: string; subtotal?: string; totalTax?: string; totalAmount?: string; totalAmountInWords?: string; remarks?: string; drawer?: string; items: OcrInvoiceItem[] }
+export type OcrInvoiceCategory = "STANDARD" | "TOLL"
+export interface OcrInvoiceData { invoiceType?: OcrInvoiceType; invoiceCategory?: OcrInvoiceCategory; invoiceNumber?: string; invoiceDate?: string; buyerName?: string; buyerTaxId?: string; sellerName?: string; sellerTaxId?: string; subtotal?: string; totalTax?: string; totalAmount?: string; totalAmountInWords?: string; remarks?: string; drawer?: string; vehiclePlate?: string; vehicleType?: string; tollAmount?: string; tollDate?: string; items: OcrInvoiceItem[] }
 export interface OcrTrainTicketData { trainInvoiceNo?: string; trainIssueDate?: string; departureStation?: string; arrivalStation?: string; trainNo?: string; departureDate?: string; departureTime?: string; seatNo?: string; seatClass?: string; ticketPrice?: string; passengerId?: string; passengerName?: string; ticketNo?: string; trainBuyerName?: string; trainBuyerCreditCode?: string }
 export type OcrExtractionMethod = "QR" | "AI" | "HYBRID" | "PDF_TEXT" | "PDF_TEXT_AI"
 export interface OcrRecognitionRecord extends OcrInvoiceData, OcrPaymentData, OcrRouteData, OcrTrainTicketData { id: string; recognitionType: OcrRecognitionType; extractionMethod?: OcrExtractionMethod; originalFilename: string; mimeType: string; status: OcrRecognitionStatus; errorMessage?: string; createdAt: string; updatedAt: string }
 export interface OcrRecognizeRequest { recognitionType: OcrRecognitionType; filename: string; mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
 export interface OcrRecognizeResult { record: OcrRecognitionRecord; success: boolean }
+export interface OcrModelInfo { provider: string; model: string }
 export interface OcrRecognitionQuery { recognitionType: OcrRecognitionType; keyword?: string; startDate?: string; endDate?: string; page?: number; pageSize?: number }
 export interface OcrExportRequest { recognitionType: OcrRecognitionType; ids?: string[]; startDate?: string; endDate?: string }
 export interface OcrExportResult { base64: string; filename: string; count: number }

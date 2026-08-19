@@ -90,7 +90,7 @@ Compose 将 PostgreSQL 映射到本机 `5433` 端口，数据保存在具名卷 
 - 事务安全：单号生成、状态流转、审计记录和下推操作在数据库事务中提交
 - 报关名称标准化：按 `name + nameEng` 归一化去重，支持多模型故障切换、结构化输出、强制复核规则、人工审核、来源明细回写和独立审计日志
 - 客户背景调查：通过 Schema 单据承载客户资料、四项判定、可信度和公开来源，支持 Excel 批量去重导入、表格勾选后由后台单队列顺序调查并逐条持久化、权限内队列领取、按 `LLM_PROVIDER_ORDER` 选择供应商与模型立即调查、模型返回实时展示、多次调查历史留档及作为后续调查上下文、失败重试、工作台进度和报告 Tab；复用 OpenAI、火山方舟、Kimi、MiniMax 的现有模型配置
-- 电子发票识别（移植自 `zinvoice`）：在 ZAI 外壳中提供 PDF/图片发票批量拖拽上传；原生 PDF 优先提取全部页面文本层并读取首页发票二维码，仅在没有有效文本层时回退到 PDF 视觉识别。AI 会区分普通发票与增值税专用发票；二维码核心字段覆盖结构化识别结果，AI 必须补全购买方、销售方、商品明细并提取备注（票面为空时允许为空），缺少票种、购销方或有效明细时整次识别失败；支持个人历史、原件详情、删除与明细级 Excel 导出，文件与结果保存在 PostgreSQL，并按当前用户隔离
+- 电子发票识别（移植自 `zinvoice`）：在 ZAI 外壳中提供 PDF/图片发票批量拖拽上传；原生 PDF 优先提取全部页面文本层并读取首页发票二维码，仅在没有有效文本层时回退到 PDF 视觉识别。AI 会区分普通发票、增值税专用发票和通行费电子发票；标准发票校验购销方与商品明细，通行费发票按车牌、通行费和通行日期判定并校验，不再强制要求购销方，同时单独提取车辆类型、销售方、税额及价税合计。支持个人历史、原件详情、删除与明细级 Excel 导出，文件与结果保存在 PostgreSQL，并按当前用户隔离
 - 支付截图自动识别：保留原有电商及支付凭证批量识别能力，与电子发票识别使用独立菜单和分类历史，提取平台、订单、金额、时间、支付方式及收款方
 - 以图搜图（移植自 `zimage`）：共享图库支持 JPG、PNG、WebP 上传、单张或批量生成 64 维结构化视觉索引，并以余弦相似度返回 Top-K 结果；查询图片和结果快照保存在 PostgreSQL，搜索历史按当前用户隔离
 - 智能抠图（移植自 `zcutout`）：在 ZAI 工作区内批量移除 JPG、PNG、WebP 背景，支持透明、纯白或自定义底色、预设方形画布、主体留白、PNG/JPG 输出、单张下载和 ZIP 打包；推理与画布处理均在浏览器本地完成，首次使用会从 IMG.LY 下载并缓存 ONNX/WASM 模型资源
@@ -140,6 +140,7 @@ npm run declaration:batch -- input.csv output.jsonl # 构建模型 Batch JSONL
 | POST | `/api/customer-research/:id/retry` | 将失败调查重新加入队列 |
 | GET | `/api/customer-research/:id/report.pdf` | 导出权限范围内已完成的客户背景调查 PDF 报告 |
 | POST | `/api/ocr/recognitions` | 上传火车票 PDF、电子发票或截图并执行对应类型识别 |
+| GET | `/api/ocr/model` | 返回发票识别当前实际使用的供应商与模型 |
 | GET | `/api/ocr/recognitions` | 分页查询当前用户的识别历史 |
 | GET | `/api/ocr/recognitions/:id` | 获取当前用户的识别详情 |
 | GET | `/api/ocr/recognitions/:id/image` | 获取识别记录的原始图片 |
@@ -270,7 +271,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `declaration_name_generation_jobs` / `declaration_name_generation_job_items`：批量模型任务及逐项结果
 - `declaration_name_source_items`：由 ERP 调用 `resolve` 时登记的来源明细和显式回写结果
 - `declaration_name_audit_logs`：模型生成、人工审核、驳回和回写审计
-- `ocr_recognitions`：用户、原始文件、识别类型与状态、火车票行程/乘客字段、结构化支付与发票字段、模型原始结果和失败信息
+- `ocr_recognitions`：用户、原始文件、识别类型与状态、火车票行程/乘客字段、通行费车辆与日期字段、结构化支付与发票字段、模型原始结果和失败信息
 - `image_search_assets`：公共图库原图、标签、视觉描述、64 维 JSONB 特征向量、模型和索引时间
 - `image_search_history`：按用户隔离的查询原图、Top-K 参数和搜索结果快照
 
@@ -313,6 +314,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `OPENAI_API_KEY` / `OPENAI_MODEL`：OpenAI Responses API 配置
 - `ARK_API_KEY` / `ARK_MODEL` / `ARK_BASE_URL`：火山方舟 OpenAI-compatible 配置
 - `OCR_PROVIDER` / `OCR_MODEL`：电子发票识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时完全回退到 `LLM_PROVIDER_ORDER` 和对应供应商的系统模型配置
+- `OCR_TIMEOUT_MS`：电子发票识别单次模型请求超时，默认 180000 毫秒；未配置时才回退到 `LLM_TIMEOUT_MS`
 - `TRAIN_TICKET_OCR_PROVIDER` / `TRAIN_TICKET_OCR_MODEL`：火车票识别专用供应商和模型，必须同时配置或同时留空；两者留空时回退到 `LLM_PROVIDER_ORDER` 中首个已配置 API Key 的供应商及其公共模型
 - `PAYMENT_OCR_PROVIDER` / `PAYMENT_OCR_MODEL`：支付截图识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时回退到 `LLM_PROVIDER_ORDER` 中首个已配置且支持图片输入的供应商及其系统模型
 - `ROUTE_OCR_PROVIDER` / `ROUTE_OCR_MODEL`：导航截图识别模块指定供应商和视觉模型，必须同时配置或同时留空；两者留空时从 `LLM_PROVIDER_ORDER` 中选择首个已配置 API Key、公共模型且支持图片输入的供应商

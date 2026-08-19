@@ -5,21 +5,24 @@ import { llmHttpError, llmNetworkError } from "./llm-error-detail.js"
 
 const nullableText = z.string().nullable().optional().default(null)
 const nullableInvoiceType = z.enum(["VAT_NORMAL", "VAT_SPECIAL"]).nullable().optional().default(null)
+const invoiceCategory = z.enum(["STANDARD", "TOLL"]).optional().default("STANDARD")
 const invoiceItemSchema = z.object({ itemName: nullableText, specification: nullableText, unit: nullableText, quantity: nullableText, unitPrice: nullableText, amount: nullableText, taxRate: nullableText, taxAmount: nullableText }).strip()
 const invoiceDataSchema = z.object({
-  invoiceType: nullableInvoiceType, invoiceNumber: nullableText, invoiceDate: nullableText, buyerName: nullableText, buyerTaxId: nullableText, sellerName: nullableText, sellerTaxId: nullableText,
+  invoiceType: nullableInvoiceType, invoiceCategory, invoiceNumber: nullableText, invoiceDate: nullableText, buyerName: nullableText, buyerTaxId: nullableText, sellerName: nullableText, sellerTaxId: nullableText,
   subtotal: nullableText, totalTax: nullableText, totalAmount: nullableText, totalAmountInWords: nullableText, remarks: nullableText, drawer: nullableText,
+  vehiclePlate: nullableText, vehicleType: nullableText, tollAmount: nullableText, tollDate: nullableText,
   items: z.array(invoiceItemSchema).max(200).optional().default([]),
 }).strip()
 
 const nullableString = { anyOf: [{ type: "string" }, { type: "null" }] } as const
 const nullableInvoiceTypeSchema = { anyOf: [{ type: "string", enum: ["VAT_NORMAL", "VAT_SPECIAL"] }, { type: "null" }] } as const
 const itemKeys = ["itemName", "specification", "unit", "quantity", "unitPrice", "amount", "taxRate", "taxAmount"] as const
-const headerKeys = ["invoiceNumber", "invoiceDate", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "subtotal", "totalTax", "totalAmount", "totalAmountInWords", "remarks", "drawer"] as const
+const headerKeys = ["invoiceNumber", "invoiceDate", "buyerName", "buyerTaxId", "sellerName", "sellerTaxId", "subtotal", "totalTax", "totalAmount", "totalAmountInWords", "remarks", "drawer", "vehiclePlate", "vehicleType", "tollAmount", "tollDate"] as const
 const outputSchema = {
-  type: "object", additionalProperties: false, required: ["invoiceType", ...headerKeys, "items"],
+  type: "object", additionalProperties: false, required: ["invoiceType", "invoiceCategory", ...headerKeys, "items"],
   properties: {
     invoiceType: nullableInvoiceTypeSchema,
+    invoiceCategory: { type: "string", enum: ["STANDARD", "TOLL"] },
     ...Object.fromEntries(headerKeys.map((key) => [key, nullableString])),
     items: { type: "array", items: { type: "object", additionalProperties: false, required: itemKeys, properties: Object.fromEntries(itemKeys.map((key) => [key, nullableString])) } },
   },
@@ -45,11 +48,13 @@ function extractJson(output: string): unknown {
   return JSON.parse(fenced.slice(start, end + 1)) as unknown
 }
 const invoiceAliases = {
-  invoiceType: ["invoiceType", "invoice_type", "发票类型"], invoiceNumber: ["invoiceNumber", "invoice_number", "发票号码"], invoiceDate: ["invoiceDate", "invoice_date", "开票日期"],
+  invoiceType: ["invoiceType", "invoice_type", "发票类型", "类型"], invoiceCategory: ["invoiceCategory", "invoice_category", "发票类别", "发票类型", "类型"], invoiceNumber: ["invoiceNumber", "invoice_number", "发票号码"], invoiceDate: ["invoiceDate", "invoice_date", "开票日期"],
   buyerName: ["buyerName", "buyer_name", "购买方名称", "购买方"], buyerTaxId: ["buyerTaxId", "buyer_tax_id", "购买方税号", "购买方纳税人识别号"],
-  sellerName: ["sellerName", "seller_name", "销售方名称", "销售方"], sellerTaxId: ["sellerTaxId", "seller_tax_id", "销售方税号", "销售方纳税人识别号"],
-  subtotal: ["subtotal", "amountTotal", "amount_total", "金额合计"], totalTax: ["totalTax", "total_tax", "税额合计"], totalAmount: ["totalAmount", "total_amount", "价税合计"],
+  sellerName: ["sellerName", "seller_name", "seller", "sellerInfo", "销售方名称", "销售方", "销售单位", "收费单位", "收款单位"], sellerTaxId: ["sellerTaxId", "seller_tax_id", "销售方税号", "销售方纳税人识别号"],
+  subtotal: ["subtotal", "amountTotal", "amount_total", "金额合计"], totalTax: ["totalTax", "total_tax", "taxAmount", "tax_amount", "税额合计", "税额"], totalAmount: ["totalAmount", "total_amount", "价税合计"],
   totalAmountInWords: ["totalAmountInWords", "total_amount_in_words", "价税合计大写"], remarks: ["remarks", "remark", "备注"], drawer: ["drawer", "开票人"],
+  vehiclePlate: ["vehiclePlate", "vehicle_plate", "plateNumber", "plate_number", "车牌", "车牌号"], vehicleType: ["vehicleType", "vehicle_type", "车辆类型", "车型"],
+  tollAmount: ["tollAmount", "toll_amount", "tollFee", "toll_fee", "通行费"], tollDate: ["tollDate", "toll_date", "passageDate", "passage_date", "通行日期"],
 } as const
 const itemAliases = {
   itemName: ["itemName", "item_name", "name", "项目名称", "商品名称"], specification: ["specification", "规格型号"], unit: ["unit", "单位"], quantity: ["quantity", "数量"],
@@ -61,17 +66,31 @@ function invoiceType(value: unknown, fallbackText: string): "VAT_NORMAL" | "VAT_
   const text = typeof value === "string" ? value.trim() : ""
   if (text === "VAT_SPECIAL" || /专用发票|special/i.test(text)) return "VAT_SPECIAL"
   if (text === "VAT_NORMAL" || /普通发票|normal/i.test(text)) return "VAT_NORMAL"
+  if (/通行费/.test(text)) return "VAT_NORMAL"
   if (/专用发票/.test(fallbackText)) return "VAT_SPECIAL"
   if (/普通发票/.test(fallbackText)) return "VAT_NORMAL"
+  if (/通行费/.test(fallbackText)) return "VAT_NORMAL"
   return null
+}
+function normalizeInvoiceCategory(value: unknown, fallbackText: string): "STANDARD" | "TOLL" {
+  if (typeof value === "string" && (value === "TOLL" || /通行费/.test(value))) return "TOLL"
+  return /通行费/.test(fallbackText) ? "TOLL" : "STANDARD"
 }
 function normalizeInvoicePayload(value: unknown, fallbackText: string): Record<string, unknown> {
   const root = record(value) || {}
   const wrapped = ["data", "result", "invoice", "invoiceData", "electronic_invoice"].map((key) => record(root[key])).find(Boolean)
   const source = wrapped || root
   const rawInvoiceType = aliasValue(source, invoiceAliases.invoiceType)
+  const rawInvoiceCategory = aliasValue(source, invoiceAliases.invoiceCategory)
   const normalized: Record<string, unknown> = Object.fromEntries(Object.entries(invoiceAliases).map(([key, aliases]) => [key, textValue(aliasValue(source, aliases))]))
   normalized.invoiceType = invoiceType(rawInvoiceType, fallbackText)
+  normalized.invoiceCategory = normalizeInvoiceCategory(rawInvoiceCategory, fallbackText)
+  if ([normalized.vehiclePlate, normalized.tollAmount, normalized.tollDate].some((item) => typeof item === "string" && item.trim())) {
+    normalized.invoiceCategory = "TOLL"
+    if (!normalized.invoiceType) normalized.invoiceType = "VAT_NORMAL"
+  }
+  const combinedVehicle = typeof normalized.vehiclePlate === "string" ? normalized.vehiclePlate.match(/^(.+?)[（(]([^）)]+)[）)]$/) : null
+  if (combinedVehicle) { normalized.vehiclePlate = combinedVehicle[1]?.trim() || null; if (!normalized.vehicleType) normalized.vehicleType = combinedVehicle[2]?.trim() || null }
   const rawItems = aliasValue(source, ["items", "invoiceItems", "invoice_items", "商品明细", "明细"])
   normalized.items = Array.isArray(rawItems) ? rawItems.map((value) => { const item = record(value) || {}; return Object.fromEntries(Object.entries(itemAliases).map(([key, aliases]) => [key, textValue(aliasValue(item, aliases))])) }) : []
   return normalized
@@ -81,9 +100,15 @@ function compactItem(item: z.infer<typeof invoiceItemSchema>): OcrInvoiceItem { 
 /** 购销方与至少一条有名称的明细是可用发票结果的最低要求；票种、税号、备注允许票面无法明确识别。 */
 export function assertCompleteInvoice(data: OcrInvoiceData): void {
   const missing: string[] = []
-  if (!data.buyerName?.trim()) missing.push("购买方名称")
-  if (!data.sellerName?.trim()) missing.push("销售方名称")
-  if (!data.items.some((item) => Boolean(item.itemName?.trim()))) missing.push("商品明细")
+  if (data.invoiceCategory === "TOLL") {
+    if (!data.vehiclePlate?.trim()) missing.push("车牌")
+    if (!data.tollAmount?.trim()) missing.push("通行费")
+    if (!data.tollDate?.trim()) missing.push("通行日期")
+  } else {
+    if (!data.buyerName?.trim()) missing.push("购买方名称")
+    if (!data.sellerName?.trim()) missing.push("销售方名称")
+    if (!data.items.some((item) => Boolean(item.itemName?.trim()))) missing.push("商品明细")
+  }
   if (missing.length) throw new Error(`发票识别不完整，缺少：${missing.join("、")}`)
 }
 
@@ -120,19 +145,24 @@ function invoiceProvider(): LlmProviderConfig {
   return moduleModel ? { ...provider, model: moduleModel } : provider
 }
 
+export function invoiceModelInfo(): { provider: string; model: string } {
+  const provider = invoiceProvider()
+  return { provider: provider.provider, model: provider.model }
+}
+
 export async function recognizeInvoice(input: OcrRecognizeRequest, context: InvoiceRecognitionContext = {}): Promise<{ data: OcrInvoiceData; raw: Record<string, unknown>; model: string }> {
   const provider = invoiceProvider()
   const model = provider.model
   const baseUrl = provider.baseUrl.replace(/\/$/, "")
-  const configuredTimeout = Number(process.env.LLM_TIMEOUT_MS); const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60_000
+  const configuredTimeout = Number(process.env.OCR_TIMEOUT_MS || process.env.LLM_TIMEOUT_MS); const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 180_000
   const fileContent = input.mimeType === "application/pdf" && context.pdfText
     ? { type: "input_text", text: `以下是从原生 PDF 文本层提取的内容，请按原文结构识别：\n${context.pdfText}` }
     : input.mimeType === "application/pdf"
     ? { type: "input_file", filename: input.filename, file_data: `data:application/pdf;base64,${input.base64Data}` }
     : { type: "input_image", image_url: `data:${input.mimeType};base64,${input.base64Data}`, detail: "high" }
   const qrContent = context.qrText ? [{ type: "input_text", text: `发票二维码原文（仅用于校验发票号码、日期和金额等核心字段，不包含购销方、明细和备注）：${context.qrText}` }] : []
-  const systemText = "你是专业的中国电子发票识别助手。只提取发票中明确存在的信息，不得猜测。必须根据票面标题判定发票类型：增值税专用发票返回 VAT_SPECIAL，普通发票（包括增值税普通发票）返回 VAT_NORMAL。必须仔细识别购买方和销售方的名称、纳税人识别号，逐行提取全部货物、服务或应税劳务明细，并提取备注栏原文。金额、税率和日期保留票面格式；票面没有税号、备注或其他字段时返回 null，不得用推测内容填充。"
-  const userText = `完整识别这份发票。先区分普通发票与增值税专用发票，再确保购买方、销售方、全部商品明细和备注没有遗漏，同时提取发票号码、开票日期、双方税号、金额税额合计、价税合计大小写和开票人。${context.qrText ? `\n发票二维码原文（仅用于校验核心字段）：${context.qrText}` : ""}${context.pdfText ? `\n以下是原生 PDF 文本层：\n${context.pdfText}` : ""}`
+  const systemText = "你是专业的中国电子发票识别助手。只提取发票中明确存在的信息，不得猜测。普通商品发票的 invoiceCategory 返回 STANDARD；通行费电子发票返回 TOLL，并提取车牌 vehiclePlate、车辆类型 vehicleType、通行费 tollAmount 和通行日期 tollDate。增值税专用发票的 invoiceType 返回 VAT_SPECIAL，普通发票及通行费电子发票返回 VAT_NORMAL。普通商品发票必须仔细识别购销方、税号、全部商品明细和备注；通行费发票重点识别车辆、通行金额日期、税额、价税合计和销售方。金额、税率和日期保留票面格式；票面没有的字段返回 null，不得猜测。"
+  const userText = `完整识别这份发票。先判断是否为通行费电子发票，再区分普通发票与增值税专用发票，并按对应票种提取全部字段。${context.qrText ? `\n发票二维码原文（仅用于校验核心字段）：${context.qrText}` : ""}${context.pdfText ? `\n以下是原生 PDF 文本层：\n${context.pdfText}` : ""}`
   let endpoint = `${baseUrl}/responses`
   let body: Record<string, unknown> = { model, input: [{ role: "system", content: [{ type: "input_text", text: systemText }] }, { role: "user", content: [{ type: "input_text", text: userText }, ...qrContent, fileContent] }], text: { format: { type: "json_schema", name: "electronic_invoice", strict: true, schema: outputSchema } } }
   if (provider.mode === "chat-json-schema") {

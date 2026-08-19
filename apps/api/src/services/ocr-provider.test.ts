@@ -31,6 +31,26 @@ describe("electronic invoice OCR provider", () => {
     expect(result.data).not.toHaveProperty("invoiceDate")
   })
 
+  it("recognizes a toll invoice with its specialized fields", async () => {
+    process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
+    const output = { 类型: "通行费电子发票", 车牌: "浙BF8F89（客车）", 通行费: "¥41.06", 税额: "¥1.23", 价税合计: "¥42.29", 通行日期: "2026-07-30", 销售方: "上海路桥发展有限公司" }
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ output: [{ content: [{ type: "output_text", text: JSON.stringify(output) }] }] }) })))
+
+    const result = await recognizeInvoice({ recognitionType: "INVOICE", filename: "toll.png", mimeType: "image/png", base64Data: "aW1hZ2U=" })
+
+    expect(result.data).toMatchObject({ invoiceType: "VAT_NORMAL", invoiceCategory: "TOLL", vehiclePlate: "浙BF8F89", vehicleType: "客车", tollAmount: "¥41.06", totalTax: "¥1.23", totalAmount: "¥42.29", tollDate: "2026-07-30", sellerName: "上海路桥发展有限公司", items: [] })
+  })
+
+  it("uses toll fields over an incorrect standard category and does not require parties", async () => {
+    process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
+    const output = { invoiceCategory: "STANDARD", vehiclePlate: "浙BF8F89", tollAmount: "41.06", tollDate: "2026-07-30" }
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ output: [{ content: [{ type: "output_text", text: JSON.stringify(output) }] }] }) })))
+
+    const result = await recognizeInvoice({ recognitionType: "INVOICE", filename: "toll.png", mimeType: "image/png", base64Data: "aW1hZ2U=" })
+
+    expect(result.data).toMatchObject({ invoiceType: "VAT_NORMAL", invoiceCategory: "TOLL", vehiclePlate: "浙BF8F89", tollAmount: "41.06", tollDate: "2026-07-30", items: [] })
+  })
+
   it("reports an incomplete result instead of exposing schema validation details", async () => {
     process.env.LLM_PROVIDER_ORDER = "openai"; process.env.OPENAI_API_KEY = "test-key"
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ output: [{ content: [{ type: "output_text", text: "{}" }] }] }) })))

@@ -225,6 +225,7 @@ export async function processDeclarationNameJob(jobId: string): Promise<void> {
   await prisma.declarationNameGenerationJob.update({ where: { id: jobId }, data: { status: "RUNNING", startedAt: new Date() } })
   const items = await prisma.declarationNameGenerationJobItem.findMany({ where: { jobId }, include: { mapping: true }, orderBy: { createdAt: "asc" } })
   let successCount = 0; let failedCount = 0; let reviewCount = 0
+  const failureDetails: string[] = []
   for (const item of items) {
     const before = item.mapping
     try {
@@ -240,11 +241,19 @@ export async function processDeclarationNameJob(jobId: string): Promise<void> {
     } catch (error) {
       failedCount += 1
       const message = sanitizeProviderError(error instanceof Error ? error.message : String(error))
+      failureDetails.push(`${before.rawName} / ${before.rawNameEng}\n${message}`)
       await prisma.$transaction([
         prisma.declarationNameMapping.update({ where: { id: before.id }, data: { status: "FAILED", errorMessage: message } }),
         prisma.declarationNameGenerationJobItem.update({ where: { id: item.id }, data: { status: "FAILED", errorMessage: message } }),
       ])
     }
   }
-  await prisma.declarationNameGenerationJob.update({ where: { id: jobId }, data: { status: failedCount ? "FAILED" : "COMPLETED", successCount, failedCount, reviewCount, finishedAt: new Date() } })
+  await prisma.declarationNameGenerationJob.update({
+    where: { id: jobId },
+    data: {
+      status: failedCount ? "FAILED" : "COMPLETED", successCount, failedCount, reviewCount,
+      errorMessage: failureDetails.length ? failureDetails.join("\n\n").slice(0, 10000) : null,
+      finishedAt: new Date(),
+    },
+  })
 }
