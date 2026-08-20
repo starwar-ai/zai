@@ -90,6 +90,7 @@ Compose 将 PostgreSQL 映射到本机 `5433` 端口，数据保存在具名卷 
 - 事务安全：单号生成、状态流转、审计记录和下推操作在数据库事务中提交
 - 报关名称标准化：按 `name + nameEng` 归一化去重，支持多模型故障切换、结构化输出、强制复核规则、人工审核、来源明细回写和独立审计日志
 - 客户背景调查：通过 Schema 单据承载客户资料、四项判定、可信度和公开来源，支持 Excel 批量去重导入、表格勾选后由后台单队列顺序调查并逐条持久化、权限内队列领取、按 `LLM_PROVIDER_ORDER` 选择供应商与模型立即调查、模型返回实时展示、多次调查历史留档及作为后续调查上下文、失败重试、工作台进度和报告 Tab；复用 OpenAI、火山方舟、Kimi、MiniMax 的现有模型配置
+- 供应商名片识别（移植自 `zcard`）：上传 JPG、PNG 或 WebP 名片后提取公司、联系人、职称、电话、邮箱、地址与网站，支持原图对照校对、个人历史检索、删除和 Excel 导出；图片与结构化结果保存在 PostgreSQL，并按当前用户隔离
 - 电子发票识别（移植自 `zinvoice`）：在 ZAI 外壳中提供 PDF/图片发票批量拖拽上传；原生 PDF 优先提取全部页面文本层并读取首页发票二维码，仅在没有有效文本层时回退到 PDF 视觉识别。AI 会区分普通发票、增值税专用发票和通行费电子发票；标准发票校验购销方与商品明细，通行费发票按车牌、通行费和通行日期判定并校验，不再强制要求购销方，同时单独提取车辆类型、销售方、税额及价税合计。支持个人历史、原件详情、删除与明细级 Excel 导出，文件与结果保存在 PostgreSQL，并按当前用户隔离
 - 支付截图自动识别：保留原有电商及支付凭证批量识别能力，与电子发票识别使用独立菜单和分类历史，提取平台、订单、金额、时间、支付方式及收款方
 - 以图搜图（移植自 `zimage`）：共享图库支持 JPG、PNG、WebP 上传、单张或批量生成 64 维结构化视觉索引，并以余弦相似度返回 Top-K 结果；查询图片和结果快照保存在 PostgreSQL，搜索历史按当前用户隔离
@@ -292,7 +293,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 
 报关名称能力使用 `declaration-name:view`、`declaration-name:generate`、`declaration-name:review` 和 `declaration-name:writeback` 四个权限码；种子数据提供最小权限的 `DECLARATION_REVIEWER` 角色。
 
-火车票、导航截图、支付截图和电子发票识别共用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。四类记录按识别类型分别查询，并且原件、删除和导出都会再次按当前用户 ID 与识别类型限定。火车票识别支持带文本层的铁路电子客票 PDF，可提取行程、车次座位、乘客、票价及购买方字段；导航截图识别会提取当前选中路线的目的地、途经地、距离、通行费、置信度及选中依据。
+供应商名片、火车票、导航截图、支付截图和电子发票识别共用 `ocr:view`、`ocr:recognize`、`ocr:delete` 和 `ocr:export` 四个权限码；种子数据提供最小权限的 `OCR_OPERATOR` 角色。五类记录按识别类型分别查询，并且详情、原件、修改、删除和导出都会再次按当前用户 ID 与识别类型限定。供应商名片支持识别后人工校对并保存；火车票识别支持带文本层的铁路电子客票 PDF，可提取行程、车次座位、乘客、票价及购买方字段；导航截图识别会提取当前选中路线的目的地、途经地、距离、通行费、置信度及选中依据。
 
 以图搜图使用 `image-search:view`、`image-search:search`、`image-search:manage` 和 `image-search:index` 四个权限码。种子数据提供只能搜索和查看个人历史的 `IMAGE_SEARCH_OPERATOR`；公共图库上传/删除与模型索引需要额外管理权限。
 
@@ -318,6 +319,7 @@ Schema 只保存 `custom:my-field`、`handlerId` 或 `pluginId`，因此可以�
 - `TRAIN_TICKET_OCR_PROVIDER` / `TRAIN_TICKET_OCR_MODEL`：火车票识别专用供应商和模型，必须同时配置或同时留空；两者留空时回退到 `LLM_PROVIDER_ORDER` 中首个已配置 API Key 的供应商及其公共模型
 - `PAYMENT_OCR_PROVIDER` / `PAYMENT_OCR_MODEL`：支付截图识别模块指定供应商和模型，必须同时配置或同时留空；两者留空时回退到 `LLM_PROVIDER_ORDER` 中首个已配置且支持图片输入的供应商及其系统模型
 - `ROUTE_OCR_PROVIDER` / `ROUTE_OCR_MODEL`：导航截图识别模块指定供应商和视觉模型，必须同时配置或同时留空；两者留空时从 `LLM_PROVIDER_ORDER` 中选择首个已配置 API Key、公共模型且支持图片输入的供应商
+- `BUSINESS_CARD_OCR_PROVIDER` / `BUSINESS_CARD_OCR_MODEL`：供应商名片识别模块指定供应商和视觉模型，必须同时配置或同时留空；两者留空时从 `LLM_PROVIDER_ORDER` 中选择首个已配置且支持图片输入的供应商
 - `IMAGE_SEARCH_MODEL`：图片视觉索引与查询特征提取模型；留空时使用 `OPENAI_MODEL`，模型必须支持图片输入和严格 JSON Schema 输出
 - `KIMI_API_KEY` / `KIMI_MODEL` / `KIMI_BASE_URL`：Kimi OpenAI-compatible 配置
 - `MINIMAX_API_KEY` / `MINIMAX_MODEL` / `MINIMAX_BASE_URL`：MiniMax Anthropic-compatible 配置

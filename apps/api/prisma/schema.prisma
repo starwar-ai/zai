@@ -205,6 +205,13 @@ model OcrRecognition {
   ticketNo         String?  @map("ticket_no") @db.VarChar(100)
   trainBuyerName   String?  @map("train_buyer_name") @db.VarChar(255)
   trainBuyerCreditCode String? @map("train_buyer_credit_code") @db.VarChar(30)
+  companyName      String?  @map("company_name") @db.VarChar(255)
+  contactName      String?  @map("contact_name") @db.VarChar(255)
+  jobTitle         String?  @map("job_title") @db.VarChar(255)
+  phone            String?  @db.VarChar(255)
+  email            String?  @db.VarChar(320)
+  address          String?  @db.VarChar(4000)
+  website          String?  @db.VarChar(512)
   rawJson          Json?    @map("raw_json") @db.JsonB
   model            String?  @db.VarChar(100)
   errorMessage     String?  @map("error_message") @db.VarChar(1000)

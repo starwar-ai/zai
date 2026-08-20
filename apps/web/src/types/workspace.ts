@@ -8,7 +8,7 @@ export type WorkspaceView =
   | { kind: "help" }
   | { kind: "system"; entity: "menus" | "users" | "roles" | "departments" }
   | { kind: "declaration-name" }
-  | { kind: "ocr"; mode: "payment" | "invoice" | "navigation-route" | "train-ticket" }
+  | { kind: "ocr"; mode: "payment" | "invoice" | "navigation-route" | "train-ticket" | "business-card" }
   | { kind: "image-search" }
   | { kind: "image-cutout" }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Bell, Boxes, Building2, ChevronLeft, ChevronRight, CircleHelp, FileImage, FileText, Images, Languages, LayoutDashboard, MenuSquare, Navigation, PackageOpen, ScanLine, SearchCheck, Settings, ShieldCheck, ShoppingCart, Sparkles, Train, Users, Warehouse } from "lucide-react"
+import { Bell, Boxes, Building2, ChevronLeft, ChevronRight, CircleHelp, ContactRound, FileImage, FileText, Images, Languages, LayoutDashboard, MenuSquare, Navigation, PackageOpen, ScanLine, SearchCheck, Settings, ShieldCheck, ShoppingCart, Sparkles, Train, Users, Warehouse } from "lucide-react"
 import type { DashboardData, DocumentRecord, DocumentSchema, ShellBootstrapData, ShellMenuItem, UserNotification, UserShellSettings } from "@zform/shared"
 import { api } from "@/apis/framework-api"
 import { Dashboard } from "@/components/dashboard"
@@ -15,6 +15,7 @@ import { ImageSearch } from "@/components/image-search"
 import { createClientId } from "@/lib/client-id"
 import { ImageCutout } from "@/components/image-cutout"
 import { TrainTicketRecognition } from "@/components/train-ticket-recognition"
+import { SupplierBusinessCardRecognition } from "@/components/supplier-business-card-recognition"
 import { SystemManagement } from "@/components/system-management"
 import { ConfirmDialog, IconButton } from "@/components/ui"
 import { UiShowcase } from "@/components/ui/ui-showcase"
@@ -22,7 +23,7 @@ import { UserSettings } from "@/components/user-settings"
 import { WorkspaceTabs } from "@/components/workspace-tabs"
 import type { WorkspaceTab, WorkspaceView } from "@/types/workspace"
 
-const menuIcons = { LayoutDashboard, FileText, PackageOpen, ShoppingCart, Warehouse, SearchCheck, Settings, CircleHelp, MenuSquare, Building2, Users, ShieldCheck, Languages, ScanLine, Navigation, Train, Images, FileImage }
+const menuIcons = { LayoutDashboard, FileText, PackageOpen, ShoppingCart, Warehouse, SearchCheck, Settings, CircleHelp, MenuSquare, Building2, Users, ShieldCheck, Languages, ScanLine, Navigation, Train, Images, FileImage, ContactRound }
 const dashboardTab: WorkspaceTab = { id: "dashboard", title: "工作台", view: { kind: "dashboard" }, closable: false, revision: 0 }
 interface DiscardRequest { description: string; action: () => void }
 
@@ -103,7 +104,7 @@ export function AppLayout() {
     if (item.target === "user-management") openView({ kind: "system", entity: "users" }, "用户管理", "system:users")
     if (item.target === "role-management") openView({ kind: "system", entity: "roles" }, "角色管理", "system:roles")
     if (item.target === "declaration-name") openView({ kind: "declaration-name" }, "报关名称审核", "declaration-name")
-    if (item.target === "ocr-recognition") { const mode = item.targetId === "payment" ? "payment" : item.targetId === "navigation-route" ? "navigation-route" : item.targetId === "train-ticket" ? "train-ticket" : "invoice"; openView({ kind: "ocr", mode }, item.label, `ocr-recognition:${mode}`) }
+    if (item.target === "ocr-recognition") { const mode = item.targetId === "payment" ? "payment" : item.targetId === "navigation-route" ? "navigation-route" : item.targetId === "train-ticket" ? "train-ticket" : item.targetId === "business-card" ? "business-card" : "invoice"; openView({ kind: "ocr", mode }, item.label, `ocr-recognition:${mode}`) }
     if (item.target === "image-search") openView({ kind: "image-search" }, item.label, "image-search")
     if (item.target === "image-cutout") openView({ kind: "image-cutout" }, item.label, "image-cutout")
   }
@@ -115,7 +116,7 @@ export function AppLayout() {
     if (item.target === "user-management") return activeTab.view.kind === "system" && activeTab.view.entity === "users"
     if (item.target === "role-management") return activeTab.view.kind === "system" && activeTab.view.entity === "roles"
     if (item.target === "declaration-name") return activeTab.view.kind === "declaration-name"
-    if (item.target === "ocr-recognition") return activeTab.view.kind === "ocr" && activeTab.view.mode === (item.targetId === "payment" ? "payment" : item.targetId === "navigation-route" ? "navigation-route" : item.targetId === "train-ticket" ? "train-ticket" : "invoice")
+    if (item.target === "ocr-recognition") return activeTab.view.kind === "ocr" && activeTab.view.mode === (item.targetId === "payment" ? "payment" : item.targetId === "navigation-route" ? "navigation-route" : item.targetId === "train-ticket" ? "train-ticket" : item.targetId === "business-card" ? "business-card" : "invoice")
     if (item.target === "image-search") return activeTab.view.kind === "image-search"
     if (item.target === "image-cutout") return activeTab.view.kind === "image-cutout"
     return activeTab.view.kind === item.target
@@ -138,7 +139,7 @@ export function AppLayout() {
     if (view.kind === "settings" && shell && settings) return <UserSettings config={shell.config} settings={settings} onChange={setSettings} onSave={saveUserSettings} />
     if (view.kind === "system") return <SystemManagement entity={view.entity} onShellChanged={async () => { const next = await api.shell(); setShell(next) }} />
     if (view.kind === "declaration-name") return <DeclarationNameReview key={tab.revision} />
-    if (view.kind === "ocr") return view.mode === "payment" ? <PaymentRecognition key={tab.revision} /> : view.mode === "navigation-route" ? <NavigationRouteRecognition key={tab.revision} /> : view.mode === "train-ticket" ? <TrainTicketRecognition key={tab.revision} /> : <OcrRecognition key={tab.revision} />
+    if (view.kind === "ocr") return view.mode === "payment" ? <PaymentRecognition key={tab.revision} /> : view.mode === "navigation-route" ? <NavigationRouteRecognition key={tab.revision} /> : view.mode === "train-ticket" ? <TrainTicketRecognition key={tab.revision} /> : view.mode === "business-card" ? <SupplierBusinessCardRecognition key={tab.revision} onDirtyChange={(dirty) => setDirty(tab.id, dirty)} /> : <OcrRecognition key={tab.revision} />
     if (view.kind === "image-search") return <ImageSearch key={tab.revision} permissions={shell?.user.permissions || []} />
     if (view.kind === "image-cutout") return <ImageCutout key={tab.revision} />
     return <UiShowcase />
